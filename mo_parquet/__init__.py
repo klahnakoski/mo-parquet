@@ -76,67 +76,90 @@ def rows_to_columns(data, schema):
     return output
 
 
-def rows_to_val_rep(data, schema, is_required):
+def value_to_rep(data, schema):
     # organize schema along property paths
     new_schema = Data()
     values = {}
     rep_levels = {}
-    def_levels = {}
     leaves = schema.leaves('.')
     for col in leaves:
         full_name = col.names['.']
         new_schema[full_name] = {}
         values[full_name] = []
         rep_levels[full_name] = []
-        def_levels[full_name] = []
 
-    def _none_to_ref_and_def(schema, path, rep_level, def_level):
+    def _none_to_rep(schema, path, rep_level):
         if schema:
             for name, sub_schema in schema.items():
                 new_path = concat_field(path, name)
-                _none_to_ref_and_def(sub_schema, new_path, rep_level, def_level)
+                _none_to_rep(sub_schema, new_path, rep_level)
         else:
             values[path].append(None)
             rep_levels[path].append(rep_level)
-            def_levels[path].append(def_level)
 
-
-    def _value_to_ref_and_def(value, schema, path, counters):
+    def _value_to_rep(value, schema, path, counters):
         if isinstance(value, list):
-            if path in is_required:
-                Log.error("requred variable {{name}} can not be an array", name=path)
             for k, new_value in enumerate(value):
                 new_counters = counters + (k,)
-                _value_to_ref_and_def(new_value, schema, path, new_counters)
+                _value_to_rep(new_value, schema, path, new_counters)
         elif isinstance(value, Mapping):
             for name, sub_schema in schema.items():
                 new_path = concat_field(path, name)
                 new_value = value.get(name, None)
-
-                if new_path not in is_required:
-                    new_counters = counters + (0,)  # OPTIONAL
-                else:
-                    new_counters = counters
-
-                _value_to_ref_and_def(new_value, sub_schema, new_path, new_counters)
-        elif value == None:
-            if path in is_required:
-                Log.error("requred variable {{name}} can not be missing", name=path)
-            _none_to_ref_and_def(schema, path, get_rep_level(counters), len(counters)-1)
+                _value_to_rep(new_value, sub_schema, new_path, counters)
+        elif value is None:
+            _none_to_rep(schema, path, get_rep_level(counters))
         else:
-            # if path not in is_required:
-            #     new_counters = counters + (0,)  # OPTIONAL
-            # else:
-            #     new_counters = counters
-
-            new_counters = counters
-            rep_level = get_rep_level(new_counters)
             values[path].append(value)
-            rep_levels[path].append(rep_level)
+            rep_levels[path].append(get_rep_level(counters))
+
+    _value_to_rep(data, new_schema, '.', tuple())
+    return values, rep_levels
+
+
+def value_to_def(data, schema, restrictions):
+    # organize schema along property paths
+    new_schema = Data()
+    def_levels = {}
+    leaves = schema.leaves('.')
+    for col in leaves:
+        full_name = col.names['.']
+        new_schema[full_name] = {}
+        def_levels[full_name] = []
+
+    def _none_to_def(schema, path, counters):
+        if schema:
+            for name, sub_schema in schema.items():
+                new_path = concat_field(path, name)
+                _none_to_def(sub_schema, new_path, counters)
+        else:
             def_levels[path].append(len(counters)-1)
 
-    _value_to_ref_and_def(data, new_schema, '.', tuple())
-    return values, rep_levels, def_levels
+    def _value_to_def(value, schema, path, counters):
+        if isinstance(value, list):
+            if restrictions[path] is not REPEATED:
+                Log.error("variable {{name}} can not be an array", name=path)
+            for k, new_value in enumerate(value):
+                new_counters = counters + (k,)
+                _value_to_def(new_value, schema, path, new_counters)
+        elif isinstance(value, Mapping):
+            for name, sub_schema in schema.items():
+                new_path = concat_field(path, name)
+                new_value = value.get(name, None)
+                new_counters = counters
+                if restrictions[new_path] is OPTIONAL and new_value != None:
+                    new_counters = counters + (0,)
+                _value_to_def(new_value, sub_schema, new_path, new_counters)
+        elif value == None:
+            if restrictions[path] is REQUIRED:
+                Log.error("requred variable {{name}} can not be missing", name=path)
+            _none_to_def(schema, path, counters)
+        else:
+            def_levels[path].append(len(counters)-1)
+
+    _value_to_def(data, new_schema, '.', tuple())
+    return def_levels
+
 
 def get_rep_level(counters):
     rep_level = -1

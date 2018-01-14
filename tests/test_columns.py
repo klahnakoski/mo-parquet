@@ -10,7 +10,7 @@ from jx_python.meta import get_schema_from_list
 from mo_dots import Null
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
-from mo_parquet import rows_to_columns, rows_to_val_rep
+from mo_parquet import rows_to_columns, value_to_def, REQUIRED, OPTIONAL, REPEATED, value_to_rep
 
 
 class TestColumns(FuzzyTestCase):
@@ -69,11 +69,25 @@ class TestColumns(FuzzyTestCase):
             "Name.Language.Code": [2, 2, 1, 2, 1],
             "Name.Language.Country": [3, 2, 1, 3, 1]
         }
+        restrictions = {
+            ".": REPEATED,  # EXPECTING A LIST
+            "DocId": REQUIRED,
+            "Name": REPEATED,
+            "Name.Url": OPTIONAL,
+            "Links": OPTIONAL,
+            "Links.Forward": REPEATED,
+            "Links.Backward": REPEATED,
+            "Name.Language": REPEATED,
+            "Name.Language.Code": REQUIRED,
+            "Name.Language.Country": OPTIONAL
+        }
 
         schema = get_schema_from_list("dummy", DREMEL_DATA)
-        values, reps, defs = rows_to_val_rep(DREMEL_DATA, schema, {"DocId", "Name.Language.Code"})
+        values, reps = value_to_rep(DREMEL_DATA, schema)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
+
+        defs = value_to_def(DREMEL_DATA, schema, restrictions)
         self.assertEqual(defs, expected_defs)
 
 
@@ -100,10 +114,12 @@ DREMEL_DATA = [
                 "Url": "http://B"
             },
             {
-                "Language": {
-                    "Code": "en-gb",
-                    "Country": "gb"
-                }
+                "Language": [
+                    {
+                        "Code": "en-gb",
+                        "Country": "gb"
+                    }
+                ]
             }
         ]
     },
