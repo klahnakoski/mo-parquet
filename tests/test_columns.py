@@ -40,7 +40,8 @@ class TestColumns(FuzzyTestCase):
         }
 
         schema = get_schema_from_list("dummy", DREMEL_DATA)
-        columns = rows_to_columns(DREMEL_DATA, schema)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        columns = rows_to_columns(DREMEL_DATA, all_names)
 
         self.assertEqual(columns, expected)
 
@@ -83,11 +84,12 @@ class TestColumns(FuzzyTestCase):
         }
 
         schema = get_schema_from_list("dummy", DREMEL_DATA)
-        values, reps = value_to_rep(DREMEL_DATA, schema)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        values, reps = value_to_rep(DREMEL_DATA, all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
-        defs = value_to_def(DREMEL_DATA, schema, restrictions)
+        defs = value_to_def(DREMEL_DATA, all_names, restrictions)
         self.assertEqual(defs, expected_defs)
 
 

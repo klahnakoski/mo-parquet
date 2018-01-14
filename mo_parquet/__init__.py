@@ -19,74 +19,79 @@ REQUIRED = 'required'
 OPTIONAL = 'optional'
 REPEATED = 'repeated'
 
-def rows_to_columns(data, schema):
+
+def rows_to_columns(data, all_leaves):
+    """
+    CONVERT ARRAY OF JSON OBJECTS INTO SET OF COLUMNS, EACH A MULTIDIMENSIONAL ARRAY
+    :param data: The array of objects
+    :param all_leaves: list of all leaf columns
+    :return:
+    """
+
     # organize schema along property paths
     new_schema = Data()
-    output = {}
-    values = {}
-    rep_levels = {}
-    all_names = set()
-    leaves = schema.leaves('.')
-    for col in leaves:
-        full_name = col.names['.']
+    for full_name in all_leaves:
         new_schema[full_name] = {}
-        output[full_name] = []
-        values[full_name] = []
-        rep_levels[full_name] = []
-        all_names.add(full_name)
+    output = {n: [] for n in all_leaves}
 
     names = {}
-    def _pre_calculate_the_names(new_schema, path):
-        for name, sub_schema in new_schema.items():
+
+    def _pre_calculate_the_names(schema, path):
+        names[path] = [n for n in all_leaves if startswith_field(n, path)]
+        for name, sub_schema in schema.items():
             new_path = concat_field(path, name)
-            names[new_path] = [n for n in all_names if startswith_field(n, new_path)]
-            if sub_schema:
-                _pre_calculate_the_names(sub_schema, new_path)
+            _pre_calculate_the_names(sub_schema, new_path)
     _pre_calculate_the_names(new_schema, '.')
 
-    def _rows_to_columns(data, schema, path, counters, destination):
-        for i, row in enumerate(data):
-            new_counter = counters+(i,)
-            if isinstance(row, list):
-                # multidimensional
-                new_destination = {k: [] for k in names[path]}
-                _rows_to_columns(row, schema, path, new_counter, new_destination)
-                for k, v in new_destination.items():
-                    destination[k].append(v)
-                continue
-
-            for name, sub_schema in schema.items():
-                new_path = concat_field(path, name)
-                value = listwrap(row.get(name))
-                if not sub_schema:
-                    rep_level = -1
-                    for rep_level, c in reversed(list(enumerate(new_counter))):
-                        if c > 0:
-                            break
-                    rep_levels[new_path].append(rep_level)
-                    values[new_path].append(value)
-                    destination[new_path].append(value)
-                else:
-                    new_destination = {k: [] for k in names[new_path]}
-                    _rows_to_columns(value, sub_schema, new_path, new_counter, new_destination)
+    def _rows_to_columns(value, schema, path, counters, destination):
+        if isinstance(value, list):
+           for i, new_value in enumerate(value):
+                new_counters = counters+(i,)
+                if isinstance(new_value, list):
+                    # multi-dimensional
+                    new_destination = {k: [] for k in names[path]}
+                    _rows_to_columns(new_value, schema, path, new_counters, new_destination)
                     for k, v in new_destination.items():
                         destination[k].append(v)
+                else:
+                    _rows_to_columns(new_value, schema, path, counters, destination)
+        elif value == None:
+            if schema:
+                for name, sub_schema in schema.items():
+                    _rows_to_columns(value, sub_schema, concat_field(path, name), counters, destination)
+            else:
+                destination[path].append(None)
+        elif schema:
+            for name, sub_schema in schema.items():
+                new_path = concat_field(path, name)
+                new_value = value.get(name)
+                new_counters = counters+(0,)
+                new_destination = {k: [] for k in names[new_path]}
+                _rows_to_columns(new_value, sub_schema, new_path, new_counters, new_destination)
+                for k, v in new_destination.items():
+                    destination[k].append(v)
+        else:
+            destination[path].append(value)
 
     _rows_to_columns(data, new_schema, '.', tuple(), output)
     return output
 
 
-def value_to_rep(data, schema):
+def value_to_rep(data, all_leaves):
+    """
+    REPIPITION LEVELS DO NOT REQUIRE MORE THAN A LIST OF COLUMNS TO FILL
+    :param data: array of objects
+    :param all_leaves: Names of all the leaf columns
+    :return: values and the repetition levels
+    """
+
     # organize schema along property paths
-    new_schema = Data()
-    values = {}
-    rep_levels = {}
-    leaves = schema.leaves('.')
-    for col in leaves:
-        full_name = col.names['.']
-        new_schema[full_name] = {}
-        values[full_name] = []
-        rep_levels[full_name] = []
+    schema = Data()
+    for full_name in all_leaves:
+        schema[full_name] = {}
+
+    values = {full_name: [] for full_name in all_leaves}
+    rep_levels = {full_name: [] for full_name in all_leaves}
 
     def _none_to_rep(schema, path, rep_level):
         if schema:
@@ -113,19 +118,26 @@ def value_to_rep(data, schema):
             values[path].append(value)
             rep_levels[path].append(get_rep_level(counters))
 
-    _value_to_rep(data, new_schema, '.', tuple())
+    _value_to_rep(data, schema, '.', tuple())
     return values, rep_levels
 
 
-def value_to_def(data, schema, restrictions):
+def value_to_def(data, all_leaves, nature):
+    """
+    DEFINITION LEVELS ENCODE NULLS, WHICH REQUIRES KNOWING THE
+    REQUIRED, OPTIONAL, REPEATED NATURE OF EACH COLUMN
+
+    :param data:
+    :param all_leaves:
+    :param nature: Map each column name to one of REQUIRED, OPTIONAL, REPEATED
+    :return:
+    """
+
     # organize schema along property paths
     new_schema = Data()
-    def_levels = {}
-    leaves = schema.leaves('.')
-    for col in leaves:
-        full_name = col.names['.']
+    for full_name in all_leaves:
         new_schema[full_name] = {}
-        def_levels[full_name] = []
+    def_levels = {full_name: [] for full_name in all_leaves}
 
     def _none_to_def(schema, path, counters):
         if schema:
@@ -137,7 +149,7 @@ def value_to_def(data, schema, restrictions):
 
     def _value_to_def(value, schema, path, counters):
         if isinstance(value, list):
-            if restrictions[path] is not REPEATED:
+            if nature[path] is not REPEATED:
                 Log.error("variable {{name}} can not be an array", name=path)
             for k, new_value in enumerate(value):
                 new_counters = counters + (k,)
@@ -147,11 +159,11 @@ def value_to_def(data, schema, restrictions):
                 new_path = concat_field(path, name)
                 new_value = value.get(name, None)
                 new_counters = counters
-                if restrictions[new_path] is OPTIONAL and new_value != None:
+                if nature[new_path] is OPTIONAL and new_value != None:
                     new_counters = counters + (0,)
                 _value_to_def(new_value, sub_schema, new_path, new_counters)
         elif value == None:
-            if restrictions[path] is REQUIRED:
+            if nature[path] is REQUIRED:
                 Log.error("requred variable {{name}} can not be missing", name=path)
             _none_to_def(schema, path, counters)
         else:
