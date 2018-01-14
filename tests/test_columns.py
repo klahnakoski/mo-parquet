@@ -134,7 +134,7 @@ class TestColumns(FuzzyTestCase):
 
         expected_values = {"v": [NULL, "legit value"]}
         expected_reps = {"v": [0, 0]}
-        expected_defs = {"v": [0, 0]}
+        expected_defs = {"v": [0, 1]}
 
         schema = get_schema_from_list("dummy", good_data)
         all_names = [c.names['.'] for c in schema.leaves('.')]
@@ -177,6 +177,33 @@ class TestColumns(FuzzyTestCase):
 
         for b in bad_data:
             self.assertRaises(Exception, value_to_def, [b], all_names, nature)
+
+    def test_nulls_to_array(self):
+        data = [
+            {"v": None},
+            {"v": "legit value"},
+            {"v": []},
+            {"v": [None]},
+            {"v": [None, None]}
+        ]
+
+        # ASSUMES ALL PROPERTIES ARE REPEATED, THEREFORE
+        #     None == []
+        #     value == [value]
+        #     list == list
+        expected = {"v": [
+            [NULL],
+            ["legit value"],
+            [],
+            [NULL],
+            [NULL, NULL]
+        ]}
+
+        schema = get_schema_from_list("dummy", data)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        columns = rows_to_columns(data, all_names)
+
+        self.assertEqual(columns, expected)
 
 
 DREMEL_DATA = [
