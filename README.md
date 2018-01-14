@@ -9,15 +9,41 @@ Encode deep nested JSON and ensure schema expansion works over billions of JSON 
 
 ## Analysis
 
-I have read the Dremel paper, and some other docs describing the Dremel paper, and I have come to the (proabably wrong) conclusion that definition levels are superfluous when encoding single properties (columns).  the paper admits the definition levels only encode missing values; specifically the definition level ofthe objects with missing values. If we are not interested in the missing values
+I have read the Dremel paper, and some other docs describing the Dremel paper, and I have come to the conclusion that definition levels are superfluous when encoding properties. The Dremel paper admits the definition levels only encode missing values; specifically the definition level of the objects with missing values. If we are not interested in the missing values, then we should be able to avoid definition levels completely, while still having an accurate representation of existing property values.
 
-missing values,, which means it Definition levels are an artifact of the whole-document deconstruction process; responsible for encoding document shape; the objects, not the property values.  In the paper you will notice the definition levels 
+### Simplifying Assumption
 
-We assume all properties are of type repeated
+Understanding the Dremel encoding is easier if you first consider all properties REPEATED. With this, we can assume all nulls (and missing values) are an empty array (`[]`) and all values are a singleton array (`[value]`). These assumptions allow each leaf property to be represented by a `N`-dimensional array, where `N` is the nesting level of the property (plus additional dimensions if any are arrays of arrays). For each step on the path to the leaf value, there is a dimension that represents that step. 
 
-The repetition level can encode any property that does exist. The definition level encodes the shape of the objects that are missing that property.  
+Let us call multidimensional arrays "cubes".
 
-When encoding `a.b` we must be able to encode the many ways it can 
+Here is an example of the representative cube for for `a.b`
+
+|           JSON           |      a.b 2d array     |
+| ------------------------ | --------------------- |
+|   null                   |          [[]]         |
+|   {}                     |          [[]]         |
+|   {"a": {}}              |          [[]]         |
+|   {"a": {"b": []}}       |          [[]]         |   
+|   {"a": {"b": [1]}}      |         [[1]]         |
+|   {"a": {"b": [1, 2]}}   |        [[1, 2]]       |
+
+
+For each `JSON` we extract the `a.b`; since most cases are missing that property, they show as empty 2d arrays. Notice we do not need a schema to build these arrays; they are a function of the property path we are extracting plus the JSON we are extracting from.  
+
+### Repetition Number
+
+The repetition number is a way of translating a plain series of values into these cubes; we know that all cubes are N dimensional, so the repetition number has nothing to say about where the values go; it says were the next (sub)cube begins: `0` is a whole new cube, `1` new first dimension of existing cube, `2` new second dimension of existing cube, etc.
+
+When considering the REQUIRED and OPTIONAL properties, it will not change our interpretation of the repetition number. These restricted properties only define how the single-values appear in the original JSON, the repetition number is unchanged.
+
+### Definition Number
+ 
+The definition number has no simplifying assumption; it is responsible for encoding both nulls and values, and it must consider the nature (REQUIRED, OPTIONAL, REPEATED) of every column, to calculate the value. For existing values the definition number is equal to the dimension minus the number of REQUIRED properties in the path; this means it is the same for all values of a given property. 
+
+The definition number gets complicated for nulls, where it encodes the depth of the first missing value encountered.
+
+If we assume neither `a` nor `b` are REQUIRED, then the definition number is encoding the depth of the first null (or missing value) encountered. 
 
 |           json           | value |  rep  |  def  |
 | ------------------------ | ----- | ----- | ----- |
@@ -28,7 +54,6 @@ When encoding `a.b` we must be able to encode the many ways it can
 |   {"a": {"b": [1]}}      |   1   |   0   |   2   |
 |   {"a": {"b": [1, 2]}}   |  1 2  |  0 2  |  2 2  |
 
-When encoding a value, the definition level is always the maximum dimension (in this case 2). The definition is only for the nulls. Why is the null encoding mixed with the property? If it was the only property, it may make sense, but other properties will also encode these nulls. It would be more efficient to designate one column to encode the nulls, and drop the defintion levels in all the others 
 
 
 
