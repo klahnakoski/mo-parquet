@@ -97,7 +97,7 @@ class TestColumns(FuzzyTestCase):
         defs = value_to_def(DREMEL_DATA, all_names, restrictions)
         self.assertEqual(defs, expected_defs)
 
-    def test_null_pathologies(self):
+    def test_null_repeated(self):
 
         data = [
             {"v": None},  # Since v is REPEATED, WE MUST ASSUME IT IS []
@@ -120,6 +120,63 @@ class TestColumns(FuzzyTestCase):
         defs = value_to_def(data, all_names, nature)
         self.assertEqual(defs, expected_defs)
 
+    def test_null_optional(self):
+
+        good_data = [
+            {"v": None},
+            {"v": "legit value"}
+        ]
+        bad_data = [
+            {"v": []},
+            {"v": [None]},
+            {"v": [None, None]}
+        ]
+
+        expected_values = {"v": [NULL, "legit value"]}
+        expected_reps = {"v": [0, 0]}
+        expected_defs = {"v": [0, 0]}
+
+        schema = get_schema_from_list("dummy", good_data)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        values, reps = value_to_rep(good_data, all_names)
+        self.assertEqual(values, expected_values)
+        self.assertEqual(reps, expected_reps)
+
+        nature = {".": REPEATED, "v": OPTIONAL}
+        defs = value_to_def(good_data, all_names, nature)
+        self.assertEqual(defs, expected_defs)
+
+        for b in bad_data:
+            self.assertRaises(Exception, value_to_def, [b], all_names, nature)
+
+    def test_null_required(self):
+
+        good_data = [
+            {"v": "legit value"}
+        ]
+        bad_data = [
+            {"v": None},
+            {"v": []},
+            {"v": [None]},
+            {"v": [None, None]}
+        ]
+
+        expected_values = {"v": ["legit value"]}
+        expected_reps = {"v": [0]}
+        expected_defs = {"v": [0]}
+
+        schema = get_schema_from_list("dummy", good_data)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        values, reps = value_to_rep(good_data, all_names)
+        self.assertEqual(values, expected_values)
+        self.assertEqual(reps, expected_reps)
+
+        nature = {".": REPEATED, "v": REQUIRED}
+        defs = value_to_def(good_data, all_names, nature)
+        self.assertEqual(defs, expected_defs)
+
+        for b in bad_data:
+            self.assertRaises(Exception, value_to_def, [b], all_names, nature)
 
 
 DREMEL_DATA = [
