@@ -6,6 +6,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
+from jx_base.expressions import NULL
 from jx_python.meta import get_schema_from_list
 from mo_dots import Null
 from mo_testing.fuzzytestcase import FuzzyTestCase
@@ -45,14 +46,14 @@ class TestColumns(FuzzyTestCase):
 
         self.assertEqual(columns, expected)
 
-    def test_dremel_val_rep(self):
+    def test_dremel_rep_values(self):
         expected_values = {
             "DocId": [10, 20],
-            "Name.Url": ["http://A", "http://B", Null, "http://C"],
+            "Name.Url": ["http://A", "http://B", NULL, "http://C"],
             "Links.Forward": [20, 40, 60, 80],
-            "Links.Backward": [Null, 10, 30],
-            "Name.Language.Code": ["en-us", "en", Null, "en-gb", Null],
-            "Name.Language.Country": ["us", Null, Null, "gb", Null]
+            "Links.Backward": [NULL, 10, 30],
+            "Name.Language.Code": ["en-us", "en", NULL, "en-gb", NULL],
+            "Name.Language.Country": ["us", NULL, NULL, "gb", NULL]
         }
         expected_reps = {
             "DocId": [0, 0],
@@ -62,6 +63,13 @@ class TestColumns(FuzzyTestCase):
             "Name.Language.Code": [0, 2, 1, 1, 0],
             "Name.Language.Country": [0, 2, 1, 1, 0]
         }
+        schema = get_schema_from_list("dummy", DREMEL_DATA)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        values, reps = value_to_rep(DREMEL_DATA, all_names)
+        self.assertEqual(values, expected_values)
+        self.assertEqual(reps, expected_reps)
+
+    def test_dremel_def_values(self):
         expected_defs = {
             "DocId": [0, 0],
             "Name.Url": [2, 2, 1, 2],
@@ -85,12 +93,33 @@ class TestColumns(FuzzyTestCase):
 
         schema = get_schema_from_list("dummy", DREMEL_DATA)
         all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = value_to_rep(DREMEL_DATA, all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
 
         defs = value_to_def(DREMEL_DATA, all_names, restrictions)
         self.assertEqual(defs, expected_defs)
+
+    def test_null_pathologies(self):
+
+        data = [
+            {"v": None},  # Since v is REPEATED, WE MUST ASSUME IT IS []
+            {"v": []},
+            {"v": [None]},
+            {"v": [None, None]}
+        ]
+
+        expected_values = {"v": [NULL, NULL, NULL, NULL, NULL]}
+        expected_reps = {"v": [0, 0, 0, 0, 1]}
+        expected_defs = {"v": [0, 0, 1, 1, 1]}
+
+        schema = get_schema_from_list("dummy", data)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        values, reps = value_to_rep(data, all_names)
+        self.assertEqual(values, expected_values)
+        self.assertEqual(reps, expected_reps)
+
+        nature = {".": REPEATED, "v": REPEATED}
+        defs = value_to_def(data, all_names, nature)
+        self.assertEqual(defs, expected_defs)
+
 
 
 DREMEL_DATA = [

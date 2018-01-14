@@ -12,7 +12,7 @@ from __future__ import unicode_literals
 
 from collections import Mapping
 
-from mo_dots import Data, startswith_field, listwrap, concat_field, unwraplist, Null
+from mo_dots import Data, startswith_field, concat_field
 from mo_logs import Log
 
 REQUIRED = 'required'
@@ -79,7 +79,7 @@ def rows_to_columns(data, all_leaves):
 
 def value_to_rep(data, all_leaves):
     """
-    REPIPITION LEVELS DO NOT REQUIRE MORE THAN A LIST OF COLUMNS TO FILL
+    REPETITION LEVELS DO NOT REQUIRE MORE THAN A LIST OF COLUMNS TO FILL
     :param data: array of objects
     :param all_leaves: Names of all the leaf columns
     :return: values and the repetition levels
@@ -104,9 +104,12 @@ def value_to_rep(data, all_leaves):
 
     def _value_to_rep(value, schema, path, counters):
         if isinstance(value, list):
-            for k, new_value in enumerate(value):
-                new_counters = counters + (k,)
-                _value_to_rep(new_value, schema, path, new_counters)
+            if not value:
+                _none_to_rep(schema, path, get_rep_level(counters))
+            else:
+                for k, new_value in enumerate(value):
+                    new_counters = counters + (k,)
+                    _value_to_rep(new_value, schema, path, new_counters)
         elif isinstance(value, Mapping):
             for name, sub_schema in schema.items():
                 new_path = concat_field(path, name)
@@ -127,7 +130,7 @@ def value_to_def(data, all_leaves, nature):
     DEFINITION LEVELS ENCODE NULLS, WHICH REQUIRES KNOWING THE
     REQUIRED, OPTIONAL, REPEATED NATURE OF EACH COLUMN
 
-    :param data:
+    :param data: Array of objects
     :param all_leaves:
     :param nature: Map each column name to one of REQUIRED, OPTIONAL, REPEATED
     :return:
@@ -151,9 +154,13 @@ def value_to_def(data, all_leaves, nature):
         if isinstance(value, list):
             if nature[path] is not REPEATED:
                 Log.error("variable {{name}} can not be an array", name=path)
-            for k, new_value in enumerate(value):
-                new_counters = counters + (k,)
-                _value_to_def(new_value, schema, path, new_counters)
+
+            if not value:
+                _none_to_def(schema, path, counters)
+            else:
+                for k, new_value in enumerate(value):
+                    new_counters = counters + (k,)
+                    _value_to_def(new_value, schema, path, new_counters)
         elif isinstance(value, Mapping):
             for name, sub_schema in schema.items():
                 new_path = concat_field(path, name)
@@ -179,8 +186,3 @@ def get_rep_level(counters):
         if c > 0:
             break
     return rep_level
-
-
-def columns_to_rows(data, schema):
-    pass
-
