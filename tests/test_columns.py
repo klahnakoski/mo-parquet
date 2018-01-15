@@ -205,6 +205,54 @@ class TestColumns(FuzzyTestCase):
 
         self.assertEqual(columns, expected)
 
+    def test_classic_nested(self):
+        data = [
+            {"a": "value0"},
+            {"a": "value1", "b": [{"c": -1, "d": 0}]},
+            {"a": "value2", "b": [{"c": 1, "d": 2}, {"c": 3, "d": 4}]},
+            {"a": "value3", "b": [{"c": 5, "d": 6}, {"c": 7}, {"e": [{"g": 1}, {"g": 2}]}, {"c": 9, "d": 10}]}
+        ]
+
+        expected_values = {
+            "a": ["value0", "value1", "value2", "value3"],
+            "b.c": [NULL, -1, 1, 3, 5, 7, NULL, 9],
+            "b.d": [NULL, 0, 2, 4, 6, NULL, NULL, 10],
+            "b.e.g": [NULL, NULL, NULL, NULL, NULL, NULL, 1, 2, NULL]
+        }
+
+        expected_reps = {
+            "a": [0, 0, 0, 0],
+            "b.c": [0, 0, 0, 1, 0, 1, 1, 1],
+            "b.d": [0, 0, 0, 1, 0, 1, 1, 1],
+            "b.e.g": [0, 0, 0, 1, 0, 1, 1, 2, 1]
+        }
+
+        expected_defs = {
+            "a": [0, 0, 0, 0],
+            "b.c": [0, 2, 2, 2, 2, 2, 1, 2],
+            "b.d": [0, 2, 2, 2, 2, 1, 1, 2],
+            "b.e.g": [0, 1, 1, 1, 1, 1, 2, 2, 1]
+        }
+
+        schema = get_schema_from_list("dummy", data)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        values, reps = value_to_rep(data, all_names)
+        self.assertEqual(values, expected_values)
+        self.assertEqual(reps, expected_reps)
+
+        nature = {
+            ".": REPEATED,
+            "a": REQUIRED,
+            "b": REPEATED,
+            "b.c": OPTIONAL,
+            "b.d": OPTIONAL,
+            "b.e": REPEATED,
+            "b.e.g": REQUIRED
+        }
+        defs = value_to_def(data, all_names, nature)
+        self.assertEqual(defs, expected_defs)
+
+
 
 DREMEL_DATA = [
     {
