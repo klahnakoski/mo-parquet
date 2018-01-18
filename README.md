@@ -6,6 +6,9 @@ Read and write parquet files in pure Python, including nested object arrays
 
 Encode deep nested JSON and ensure schema expansion works over billions of JSON records
 
+## Code
+
+Work is proceeding on [my fork of fastparquet](https://github.com/klahnakoski/fastparquet/blob/nested/fastparquet/json_writer.py)
 
 ## Analysis
 
@@ -39,11 +42,9 @@ When considering the REQUIRED and OPTIONAL properties, it will not change our in
 
 ### Definition Number
  
-The definition number has no simplifying assumption; it is responsible for encoding both nulls and values, and it must consider the nature (REQUIRED, OPTIONAL, REPEATED) of every column, to calculate the value. For existing values the definition number is equal to the dimension minus the number of REQUIRED properties in the path; this means it is the same for all values of a given property. 
+The definition number is not simple; it encodes both nulls and values, and it must consider the nature (REQUIRED, OPTIONAL, REPEATED) of every column to calculate properly. For non-missing values the definition number is equal to the dimension minus the number of REQUIRED properties in the path; this means it is the same for all values of a given property.  
 
-The definition number gets complicated for nulls, where it encodes the depth of the first missing value encountered.
-
-If we assume neither `a` nor `b` are REQUIRED, then the definition number is encoding the depth of the first null (or missing value) encountered. 
+If we assume neither `a` nor `b` are REQUIRED, then the definition number is encoding the depth of the non-missing value OR the depth of null encountered. 
 
 |           json           | value |  rep  |  def  |
 | ------------------------ | ----- | ----- | ----- |
@@ -56,6 +57,10 @@ If we assume neither `a` nor `b` are REQUIRED, then the definition number is enc
 
 
 
+
+## Tests
+
+Tests can be found https://github.com/Parquet/parquet-compatibility
 
 
 ## Notes 

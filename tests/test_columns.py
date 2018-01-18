@@ -252,6 +252,45 @@ class TestColumns(FuzzyTestCase):
         defs = value_to_def(data, all_names, nature)
         self.assertEqual(defs, expected_defs)
 
+    def test_optional_required_repeated(self):
+        data = [
+            {},
+            {"a": {"b": {"c": 1}}},
+            {"a": {"b": {"c": 2, "d": [3]}}},
+            {"a": {"b": {"c": 4, "d": [5, 6]}}}
+        ]
+
+        expected_values = {
+            "a.b.c": [NULL, 1, 2, 4],
+            "a.b.d": [NULL, NULL, 3, 5, 6]
+        }
+
+        expected_reps = {
+            "a.b.c": [0, 0, 0, 0],
+            "a.b.d": [0, 0, 0, 0, 1]
+        }
+
+        expected_defs = {
+            "a.b.c": [0, 1, 1, 1],
+            "a.b.d": [0, 1, 2, 2, 2]
+        }
+
+        schema = get_schema_from_list("dummy", data)
+        all_names = [c.names['.'] for c in schema.leaves('.')]
+        values, reps = value_to_rep(data, all_names)
+        self.assertEqual(values, expected_values)
+        self.assertEqual(reps, expected_reps)
+
+        nature = {
+            ".": REPEATED,
+            "a": OPTIONAL,
+            "a.b": REQUIRED,
+            "a.b.c": REQUIRED,
+            "a.b.d": REPEATED
+        }
+
+        defs = value_to_def(data, all_names, nature)
+        self.assertEqual(defs, expected_defs)
 
 
 DREMEL_DATA = [
