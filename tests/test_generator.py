@@ -9,7 +9,7 @@ from __future__ import unicode_literals
 from itertools import product
 
 from mo_dots import join_field
-from mo_parquet import value_to_rep, REPEATED, value_to_def, OPTIONAL, REQUIRED
+from mo_parquet import rows_to_columns, REPEATED, rows_to_columns, OPTIONAL, REQUIRED
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
 counter = [0]
@@ -110,7 +110,7 @@ class TestGenerated(FuzzyTestCase):
         expected_defs = {"a.b": sum(def_level, [])}
 
         all_names = ["a.b"]
-        values, reps = value_to_rep(list(data), all_names)
+        values, reps = rows_to_columns(list(data), all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
@@ -119,7 +119,7 @@ class TestGenerated(FuzzyTestCase):
             "a": REPEATED,
             "a.b": REPEATED
         }
-        defs = value_to_def(list(data), all_names, nature)
+        defs = rows_to_columns(list(data), all_names, nature)
         self.assertEqual(defs, expected_defs)
 
     def test_required(self):
@@ -187,11 +187,11 @@ class TestGenerated(FuzzyTestCase):
         expected_defs = {full_name: sum(def_level, [])}
 
         all_names = [full_name]
-        values, reps = value_to_rep(list(data), all_names)
+        values, reps = rows_to_columns(list(data), all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
-        defs = value_to_def(list(data), all_names, nature)
+        defs = rows_to_columns(list(data), all_names, nature)
         self.assertEqual(defs, expected_defs)
 
 

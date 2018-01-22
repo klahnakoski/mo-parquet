@@ -11,7 +11,7 @@ from jx_python.meta import get_schema_from_list
 from mo_dots import Null
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
-from mo_parquet import rows_to_columns, value_to_def, REQUIRED, OPTIONAL, REPEATED, value_to_rep
+from mo_parquet import rows_to_columns, REQUIRED, OPTIONAL, REPEATED
 
 
 class TestColumns(FuzzyTestCase):
@@ -65,11 +65,10 @@ class TestColumns(FuzzyTestCase):
         }
         schema = get_schema_from_list("dummy", DREMEL_DATA)
         all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = value_to_rep(DREMEL_DATA, all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
+        table = rows_to_columns(DREMEL_DATA, all_names)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.rep_levels, expected_reps)
 
-    def test_dremel_def_values(self):
         expected_defs = {
             "DocId": [0, 0],
             "Name.Url": [2, 2, 1, 2],
@@ -94,8 +93,9 @@ class TestColumns(FuzzyTestCase):
         schema = get_schema_from_list("dummy", DREMEL_DATA)
         all_names = [c.names['.'] for c in schema.leaves('.')]
 
-        defs = value_to_def(DREMEL_DATA, all_names, restrictions)
-        self.assertEqual(defs, expected_defs)
+        schema = Schema()
+        table = rows_to_columns(DREMEL_DATA, all_names, restrictions)
+        self.assertEqual(table.def_levels, expected_defs)
 
     def test_null_repeated(self):
 
@@ -112,12 +112,12 @@ class TestColumns(FuzzyTestCase):
 
         schema = get_schema_from_list("dummy", data)
         all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = value_to_rep(data, all_names)
+        values, reps = rows_to_columns(data, all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
         nature = {".": REPEATED, "v": REPEATED}
-        defs = value_to_def(data, all_names, nature)
+        defs = rows_to_columns(data, all_names, nature)
         self.assertEqual(defs, expected_defs)
 
     def test_null_optional(self):
@@ -138,16 +138,16 @@ class TestColumns(FuzzyTestCase):
 
         schema = get_schema_from_list("dummy", good_data)
         all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = value_to_rep(good_data, all_names)
+        values, reps = rows_to_columns(good_data, all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
         nature = {".": REPEATED, "v": OPTIONAL}
-        defs = value_to_def(good_data, all_names, nature)
+        defs = rows_to_columns(good_data, all_names, nature)
         self.assertEqual(defs, expected_defs)
 
         for b in bad_data:
-            self.assertRaises(Exception, value_to_def, [b], all_names, nature)
+            self.assertRaises(Exception, rows_to_columns, [b], all_names, nature)
 
     def test_null_required(self):
 
@@ -167,16 +167,16 @@ class TestColumns(FuzzyTestCase):
 
         schema = get_schema_from_list("dummy", good_data)
         all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = value_to_rep(good_data, all_names)
+        values, reps = rows_to_columns(good_data, all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
         nature = {".": REPEATED, "v": REQUIRED}
-        defs = value_to_def(good_data, all_names, nature)
+        defs = rows_to_columns(good_data, all_names, nature)
         self.assertEqual(defs, expected_defs)
 
         for b in bad_data:
-            self.assertRaises(Exception, value_to_def, [b], all_names, nature)
+            self.assertRaises(Exception, rows_to_columns, [b], all_names, nature)
 
     def test_nulls_to_array(self):
         data = [
@@ -236,7 +236,7 @@ class TestColumns(FuzzyTestCase):
 
         schema = get_schema_from_list("dummy", data)
         all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = value_to_rep(data, all_names)
+        values, reps = rows_to_columns(data, all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
@@ -249,7 +249,7 @@ class TestColumns(FuzzyTestCase):
             "b.e": REPEATED,
             "b.e.g": REQUIRED
         }
-        defs = value_to_def(data, all_names, nature)
+        defs = rows_to_columns(data, all_names, nature)
         self.assertEqual(defs, expected_defs)
 
     def test_optional_required_repeated(self):
@@ -277,7 +277,7 @@ class TestColumns(FuzzyTestCase):
 
         schema = get_schema_from_list("dummy", data)
         all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = value_to_rep(data, all_names)
+        values, reps = rows_to_columns(data, all_names)
         self.assertEqual(values, expected_values)
         self.assertEqual(reps, expected_reps)
 
@@ -289,7 +289,7 @@ class TestColumns(FuzzyTestCase):
             "a.b.d": REPEATED
         }
 
-        defs = value_to_def(data, all_names, nature)
+        defs = rows_to_columns(data, all_names, nature)
         self.assertEqual(defs, expected_defs)
 
 
