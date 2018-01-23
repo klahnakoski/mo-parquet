@@ -6,45 +6,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
+from jx_base import STRING
 from jx_base.expressions import NULL
-from jx_python.meta import get_schema_from_list
-from mo_dots import Null
+from mo_future import text_type
+from mo_parquet import rows_to_columns, SchemaTree
+from mo_parquet.schema import REQUIRED, REPEATED, OPTIONAL
 from mo_testing.fuzzytestcase import FuzzyTestCase
-
-from mo_parquet import rows_to_columns, REQUIRED, OPTIONAL, REPEATED
 
 
 class TestColumns(FuzzyTestCase):
-    def test_dremel_array(self):
-        expected = {
-            "DocId": [[10], [20]],
-            "Name.Url": [
-                [["http://A"], ["http://B"], Null],
-                [["http://C"]]
-            ],
-            "Links.Forward": [
-                [[20, 40, 60]],
-                [[80]]
-            ],
-            "Links.Backward": [
-                [[]],
-                [[10, 30]]
-            ],
-            "Name.Language.Code": [
-                [[["en-us"], ["en"]], [], [["en-gb"]]],
-                [[[]]]
-            ],
-            "Name.Language.Country": [
-                [[["us"], []], [], [["gb"]]],
-                [[[]]]
-            ]
-        }
-
-        schema = get_schema_from_list("dummy", DREMEL_DATA)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        columns = rows_to_columns(DREMEL_DATA, all_names)
-
-        self.assertEqual(columns, expected)
 
     def test_dremel_rep_values(self):
         expected_values = {
@@ -63,12 +33,6 @@ class TestColumns(FuzzyTestCase):
             "Name.Language.Code": [0, 2, 1, 1, 0],
             "Name.Language.Country": [0, 2, 1, 1, 0]
         }
-        schema = get_schema_from_list("dummy", DREMEL_DATA)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        table = rows_to_columns(DREMEL_DATA, all_names)
-        self.assertEqual(table.values, expected_values)
-        self.assertEqual(table.rep_levels, expected_reps)
-
         expected_defs = {
             "DocId": [0, 0],
             "Name.Url": [2, 2, 1, 2],
@@ -77,25 +41,23 @@ class TestColumns(FuzzyTestCase):
             "Name.Language.Code": [2, 2, 1, 2, 1],
             "Name.Language.Country": [3, 2, 1, 3, 1]
         }
-        restrictions = {
-            ".": REPEATED,  # EXPECTING A LIST
-            "DocId": REQUIRED,
-            "Name": REPEATED,
-            "Name.Url": OPTIONAL,
-            "Links": OPTIONAL,
-            "Links.Forward": REPEATED,
-            "Links.Backward": REPEATED,
-            "Name.Language": REPEATED,
-            "Name.Language.Code": REQUIRED,
-            "Name.Language.Country": OPTIONAL
-        }
 
-        schema = get_schema_from_list("dummy", DREMEL_DATA)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
+        schema = SchemaTree(locked=True)
+        schema.add("DocId", REQUIRED, int)
+        schema.add("Name", REPEATED, text_type)
+        schema.add("Name.Url", OPTIONAL, text_type)
+        schema.add("Links", OPTIONAL, object)
+        schema.add("Links.Forward", REPEATED, int)
+        schema.add("Links.Backward", REPEATED, int)
+        schema.add("Name.Language", REPEATED, object)
+        schema.add("Name.Language.Code", REQUIRED, text_type)
+        schema.add("Name.Language.Country", OPTIONAL, text_type)
 
-        schema = Schema()
-        table = rows_to_columns(DREMEL_DATA, all_names, restrictions)
+        table = rows_to_columns(DREMEL_DATA)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.rep_levels, expected_reps)
         self.assertEqual(table.def_levels, expected_defs)
+
 
     def test_null_repeated(self):
 
@@ -110,15 +72,12 @@ class TestColumns(FuzzyTestCase):
         expected_reps = {"v": [0, 0, 0, 0, 1]}
         expected_defs = {"v": [0, 0, 1, 1, 1]}
 
-        schema = get_schema_from_list("dummy", data)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = rows_to_columns(data, all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
+        table = rows_to_columns(data)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.rep_levels, expected_reps)
+        self.assertEqual(table.def_levels, expected_defs)
 
         nature = {".": REPEATED, "v": REPEATED}
-        defs = rows_to_columns(data, all_names, nature)
-        self.assertEqual(defs, expected_defs)
 
     def test_null_optional(self):
 
@@ -136,18 +95,15 @@ class TestColumns(FuzzyTestCase):
         expected_reps = {"v": [0, 0]}
         expected_defs = {"v": [0, 1]}
 
-        schema = get_schema_from_list("dummy", good_data)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = rows_to_columns(good_data, all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
+        table = rows_to_columns(good_data)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.rep_levels, expected_reps)
+        self.assertEqual(table.def_levels, expected_defs)
 
-        nature = {".": REPEATED, "v": OPTIONAL}
-        defs = rows_to_columns(good_data, all_names, nature)
-        self.assertEqual(defs, expected_defs)
-
+        schema = SchemaTree(locked=True)
+        schema.add("v", OPTIONAL, STRING)
         for b in bad_data:
-            self.assertRaises(Exception, rows_to_columns, [b], all_names, nature)
+            self.assertRaises(Exception, rows_to_columns, [b], schema)
 
     def test_null_required(self):
 
@@ -165,45 +121,15 @@ class TestColumns(FuzzyTestCase):
         expected_reps = {"v": [0]}
         expected_defs = {"v": [0]}
 
-        schema = get_schema_from_list("dummy", good_data)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = rows_to_columns(good_data, all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
-
-        nature = {".": REPEATED, "v": REQUIRED}
-        defs = rows_to_columns(good_data, all_names, nature)
-        self.assertEqual(defs, expected_defs)
+        schema = SchemaTree(locked=True)
+        schema.add("v", REQUIRED, text_type)
+        table = rows_to_columns(good_data, schema)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.rep_levels, expected_reps)
+        self.assertEqual(table.def_levels, expected_defs)
 
         for b in bad_data:
-            self.assertRaises(Exception, rows_to_columns, [b], all_names, nature)
-
-    def test_nulls_to_array(self):
-        data = [
-            {"v": None},
-            {"v": "legit value"},
-            {"v": []},
-            {"v": [None]},
-            {"v": [None, None]}
-        ]
-
-        # ASSUMES ALL PROPERTIES ARE REPEATED, THEREFORE
-        #     None == []
-        #     value == [value]
-        #     list == list
-        expected = {"v": [
-            [NULL],
-            ["legit value"],
-            [],
-            [NULL],
-            [NULL, NULL]
-        ]}
-
-        schema = get_schema_from_list("dummy", data)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        columns = rows_to_columns(data, all_names)
-
-        self.assertEqual(columns, expected)
+            self.assertRaises(Exception, rows_to_columns, [b], schema)
 
     def test_classic_nested(self):
         data = [
@@ -234,23 +160,18 @@ class TestColumns(FuzzyTestCase):
             "b.e.g": [0, 1, 1, 1, 1, 1, 2, 2, 1]
         }
 
-        schema = get_schema_from_list("dummy", data)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = rows_to_columns(data, all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
+        schema = SchemaTree(locked=True)
+        schema.add("a", REQUIRED, int)
+        schema.add("b", REPEATED, object)
+        schema.add("b.c", OPTIONAL, int)
+        schema.add("b.d", OPTIONAL, int)
+        schema.add("b.e", REPEATED, object)
+        schema.add("b.e.g", REQUIRED, int)
 
-        nature = {
-            ".": REPEATED,
-            "a": REQUIRED,
-            "b": REPEATED,
-            "b.c": OPTIONAL,
-            "b.d": OPTIONAL,
-            "b.e": REPEATED,
-            "b.e.g": REQUIRED
-        }
-        defs = rows_to_columns(data, all_names, nature)
-        self.assertEqual(defs, expected_defs)
+        table = rows_to_columns(data, schema)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.rep_levels, expected_reps)
+        self.assertEqual(table.def_levels, expected_defs)
 
     def test_optional_required_repeated(self):
         data = [
@@ -275,22 +196,16 @@ class TestColumns(FuzzyTestCase):
             "a.b.d": [0, 1, 2, 2, 2]
         }
 
-        schema = get_schema_from_list("dummy", data)
-        all_names = [c.names['.'] for c in schema.leaves('.')]
-        values, reps = rows_to_columns(data, all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
+        schema = SchemaTree(locked=True)
+        schema.add("a", OPTIONAL, object)
+        schema.add("a.b", REQUIRED, object)
+        schema.add("a.b.c", REQUIRED, int)
+        schema.add("a.b.d", REQUIRED, int)
 
-        nature = {
-            ".": REPEATED,
-            "a": OPTIONAL,
-            "a.b": REQUIRED,
-            "a.b.c": REQUIRED,
-            "a.b.d": REPEATED
-        }
-
-        defs = rows_to_columns(data, all_names, nature)
-        self.assertEqual(defs, expected_defs)
+        table = rows_to_columns(data, schema)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.rep_levels, expected_reps)
+        self.assertEqual(table.def_levels, expected_defs)
 
 
 DREMEL_DATA = [

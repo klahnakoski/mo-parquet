@@ -13,21 +13,19 @@ from __future__ import unicode_literals
 from jx_base import OBJECT, NESTED, STRING
 from mo_dots import concat_field
 from mo_json.typed_encoder import NESTED_TYPE
+from mo_logs import Log
 from mo_parquet.schema import SchemaTree, get_length, get_repetition_type, merge_schema_element, python_type_to_all_types
 from mo_parquet.table import Table
 
-REQUIRED = 'required'
-OPTIONAL = 'optional'
-REPEATED = 'repeated'
 
-
-def rows_to_columns(data, schema):
+def rows_to_columns(data, schema=None):
     """
     :param data: array of objects
     :param schema: Known schema, will be extended to include all properties found in data
     :return: Table
     """
-
+    if not schema:
+        schema = SchemaTree()
     new_schema = []
 
     all_leaves = schema.leaves
@@ -37,7 +35,7 @@ def rows_to_columns(data, schema):
 
     def _none_to_column(schema, path, rep_level, counters):
         if schema:
-            for name, sub_schema in schema.items():
+            for name, sub_schema in schema.more.items():
                 new_path = concat_field(path, name)
                 _none_to_column(sub_schema, new_path, rep_level, counters)
         else:
@@ -47,7 +45,7 @@ def rows_to_columns(data, schema):
 
     def _value_to_column(value, schema, path, counters):
         ptype = type(value)
-        dtype, jtype, itype = python_type_to_all_types[ptype]
+        dtype, ltype, jtype, itype, byte_width = python_type_to_all_types[ptype]
         if jtype is NESTED:
             new_path = concat_field(path, NESTED_TYPE)
             sub_schema = schema.more.get(NESTED_TYPE)
@@ -70,6 +68,8 @@ def rows_to_columns(data, schema):
                     _value_to_column(new_value, sub_schema, new_path, counters)
 
                 for name in set(value.keys()) - set(schema.more.keys()):
+                    if schema.locked:
+                        Log.error("{{path} is not allowed in the schema", path=path)
                     new_path = concat_field(path, name)
                     new_value = value.get(name, None)
                     sub_schema = schema.more[name] = SchemaTree()
@@ -78,7 +78,7 @@ def rows_to_columns(data, schema):
             typed_name = concat_field(path, itype)
             if jtype is STRING:
                 value = value.encode('utf8')
-            element, is_new = merge_schema_element(schema.values.get(itype), typed_name, value, ptype, dtype, jtype, itype)
+            element, is_new = merge_schema_element(schema.values.get(itype), typed_name, value, ptype, ltype, dtype, jtype, itype, byte_width)
             if is_new:
                 schema.values[itype] = element
                 new_schema.append(element)
