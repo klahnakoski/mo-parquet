@@ -12,7 +12,11 @@ Work is proceeding on [my fork of fastparquet](https://github.com/klahnakoski/fa
 
 ## Analysis
 
-I have read the Dremel paper, and some other docs describing the Dremel paper, and I have come to the conclusion that definition levels are superfluous when encoding properties. The Dremel paper admits the definition levels only encode missing values; specifically the definition level of the objects with missing values. If we are not interested in the missing values, then we should be able to avoid definition levels completely, while still having an accurate representation of existing property values.
+I have read the Dremel paper, and some other docs describing the Dremel paper, and I have come to the conclusion that definition levels are superfluous when encoding properties. The Dremel paper admits the definition levels only encode missing values; specifically the definition level of the objects with missing values. <strike>If we are not interested in the missing values, then we should be able to avoid definition levels completely, while still having an accurate representation of existing property values.</strike>
+
+
+
+
 
 ### Simplifying Assumption
 
@@ -36,26 +40,27 @@ For each `JSON` we extract the `a.b`; since most cases are missing that property
 
 ### Repetition Number
 
-The repetition number is a way of translating a plain series of values into these cubes; we know that all cubes are N dimensional, so the repetition number has nothing to say about where the values go; it says were the next (sub)cube begins: `0` is a whole new cube, `1` new first dimension of existing cube, `2` new second dimension of existing cube, etc.
+The repetition number is a way of translating a plain series of values into these arrays; we know that all arrays have N dimensions, so the repetition number has nothing to say about what depth the values go; it says were the next (sub)array begins: `0` is a whole new top level array (a whole new record), `1` is a new second-level array, `2` is a new third-level array, etc.
 
 When considering the REQUIRED and OPTIONAL properties, it will not change our interpretation of the repetition number. These restricted properties only define how the single-values appear in the original JSON, the repetition number is unchanged.
 
 ### Definition Number
  
-The definition number is not simple; it encodes both nulls and values, and it must consider the nature (REQUIRED, OPTIONAL, REPEATED) of every column to calculate properly. For non-missing values the definition number is equal to the dimension minus the number of REQUIRED properties in the path; this means it is the same for all values of a given property.  
+The definition number is not simple; it encodes both nulls and values, and it must consider the nature (REQUIRED, OPTIONAL, REPEATED) of every column to calculate properly. For non-missing values the definition number is equal to the dimension minus the number of REQUIRED properties in the path; this means it is the equal to N.  
 
-If we assume neither `a` nor `b` are REQUIRED, then the definition number is encoding the depth of the non-missing value OR the depth of null encountered. 
+If we assume neither `a` nor `b` are REQUIRED, then the definition number is encoding the depth of the non-missing value OR the depth of null encountered:
 
-|           json           | value |  rep  |  def  |
-| ------------------------ | ----- | ----- | ----- |
-|   null                   |  null |   0   |  -1   |
-|   {}                     |  null |   0   |   0   |
-|   {"a": {}}              |  null |   0   |   1   |
-|   {"a": {"b": []}}       |  null |   0   |   2   |   
-|   {"a": {"b": [1]}}      |   1   |   0   |   2   |
-|   {"a": {"b": [1, 2]}}   |  1 2  |  0 2  |  2 2  |
+|           json            | value |  rep  |  def  |
+| ------------------------- | ----- | ----- | ----- |
+|   null                    |  null |   0   |  -1   |
+|   {}                      |  null |   0   |   0   |
+|   {"a": {}}               |  null |   0   |   1   |
+|   {"a": {"b": []}}        |  null |   0   |   1   |   
+|   {"a": {"b": [1]}}       |   1   |   0   |   2   |
+|   {"a": {"b": [1, 2]}}    |  1 2  |  0 2  |  2 2  |
+|   {"a": {"b": [1, None]}} |  1 2  |  0 2  |  2 2  |
 
-
+Notice the definition level can only be N if it encodes a non-null value. This means differing document structures will have the same encoding; There is no distinction between `{"a": {}}` and `{"a": {"b": []}}`. 
 
 
 ## Tests
