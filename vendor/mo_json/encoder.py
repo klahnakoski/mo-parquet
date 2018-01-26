@@ -21,10 +21,8 @@ from decimal import Decimal
 from json.encoder import encode_basestring
 from math import floor
 
-from past.builtins import xrange
-
 from mo_dots import Data, FlatList, NullType, Null
-from mo_future import text_type, binary_type, long, utf8_json_encoder, sort_using_key
+from mo_future import text_type, binary_type, long, utf8_json_encoder, sort_using_key, xrange
 from mo_json import ESCAPE_DCT, scrub, float2json
 from mo_logs import Except
 from mo_logs.strings import utf82unicode, quote

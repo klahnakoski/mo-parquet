@@ -13,12 +13,11 @@ import types
 import unittest
 from collections import Mapping
 
-from future.moves.itertools import zip_longest
-
 import mo_dots
 from mo_collections.unique_index import UniqueIndex
 from mo_dots import coalesce, literal_field, unwrap, wrap
 from mo_future import text_type
+from mo_future import zip_longest
 from mo_logs import Log
 from mo_logs.exceptions import suppress_exception, Except
 from mo_logs.strings import expand_template
@@ -123,7 +122,14 @@ def assertAlmostEqual(test, expected, digits=None, places=None, msg=None, delta=
         elif isinstance(expected, types.FunctionType):
             return expected(test)
         elif hasattr(test, "__iter__") and hasattr(expected, "__iter__"):
-            if test == None and not expected:
+            if test.__class__.__name__ == "ndarray":  # numpy
+                test = test.tolist()
+            elif test.__class__.__name__ == "DataFrame":  # pandas
+                test = test[test.columns[0]].values.tolist()
+            elif test.__class__.__name__ == "Series":  # pandas
+                test = test.values.tolist()
+
+            if not expected and test == None:
                 return
             if expected == None:
                 expected = []  # REPRESENT NOTHING
@@ -145,7 +151,7 @@ def assertAlmostEqualValue(test, expected, digits=None, places=None, msg=None, d
     Snagged from unittest/case.py, then modified (Aug2014)
     """
     if expected.__class__.__name__ == "NullOp":
-        if test == None:
+        if test == None:  # pandas dataframes reject any comparision with an exception!
             return
         else:
             raise AssertionError(expand_template("{{test}} != {{expected}}", locals()))

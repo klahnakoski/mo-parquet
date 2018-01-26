@@ -7,8 +7,8 @@ from __future__ import division
 from __future__ import unicode_literals
 
 from jx_base import STRING
-from jx_base.expressions import NULL
 from mo_future import text_type
+from mo_logs import Log
 from mo_parquet import rows_to_columns, SchemaTree
 from mo_parquet.schema import REQUIRED, REPEATED, OPTIONAL
 from mo_testing.fuzzytestcase import FuzzyTestCase
@@ -16,14 +16,18 @@ from mo_testing.fuzzytestcase import FuzzyTestCase
 
 class TestColumns(FuzzyTestCase):
 
+    @classmethod
+    def setUpClass(self):
+        Log.start()
+
     def test_dremel_rep_values(self):
         expected_values = {
             "DocId": [10, 20],
-            "Name.Url": ["http://A", "http://B", NULL, "http://C"],
+            "Name.Url": ["http://A", "http://B", "http://C"],
             "Links.Forward": [20, 40, 60, 80],
-            "Links.Backward": [NULL, 10, 30],
-            "Name.Language.Code": ["en-us", "en", NULL, "en-gb", NULL],
-            "Name.Language.Country": ["us", NULL, NULL, "gb", NULL]
+            "Links.Backward": [10, 30],
+            "Name.Language.Code": ["en-us", "en", "en-gb"],
+            "Name.Language.Country": ["us", "gb"]
         }
         expected_reps = {
             "DocId": [0, 0],
@@ -44,7 +48,7 @@ class TestColumns(FuzzyTestCase):
 
         schema = SchemaTree(locked=True)
         schema.add("DocId", REQUIRED, int)
-        schema.add("Name", REPEATED, text_type)
+        schema.add("Name", REPEATED, object)
         schema.add("Name.Url", OPTIONAL, text_type)
         schema.add("Links", OPTIONAL, object)
         schema.add("Links.Forward", REPEATED, int)
@@ -53,14 +57,12 @@ class TestColumns(FuzzyTestCase):
         schema.add("Name.Language.Code", REQUIRED, text_type)
         schema.add("Name.Language.Country", OPTIONAL, text_type)
 
-        table = rows_to_columns(DREMEL_DATA)
+        table = rows_to_columns(DREMEL_DATA, schema=schema)
         self.assertEqual(table.values, expected_values)
-        self.assertEqual(table.rep_levels, expected_reps)
-        self.assertEqual(table.def_levels, expected_defs)
-
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
 
     def test_null_repeated(self):
-
         data = [
             {"v": None},  # Since v is REPEATED, WE MUST ASSUME IT IS []
             {"v": []},
@@ -68,14 +70,14 @@ class TestColumns(FuzzyTestCase):
             {"v": [None, None]}
         ]
 
-        expected_values = {"v": [NULL, NULL, NULL, NULL, NULL]}
+        expected_values = {"v": []}
         expected_reps = {"v": [0, 0, 0, 0, 1]}
         expected_defs = {"v": [0, 0, 1, 1, 1]}
 
         table = rows_to_columns(data)
         self.assertEqual(table.values, expected_values)
-        self.assertEqual(table.rep_levels, expected_reps)
-        self.assertEqual(table.def_levels, expected_defs)
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
 
         nature = {".": REPEATED, "v": REPEATED}
 
@@ -91,17 +93,18 @@ class TestColumns(FuzzyTestCase):
             {"v": [None, None]}
         ]
 
-        expected_values = {"v": [NULL, "legit value"]}
+        expected_values = {"v": ["legit value"]}
         expected_reps = {"v": [0, 0]}
-        expected_defs = {"v": [0, 1]}
-
-        table = rows_to_columns(good_data)
-        self.assertEqual(table.values, expected_values)
-        self.assertEqual(table.rep_levels, expected_reps)
-        self.assertEqual(table.def_levels, expected_defs)
+        expected_defs = {"v": [1, 1]}
 
         schema = SchemaTree(locked=True)
-        schema.add("v", OPTIONAL, STRING)
+        schema.add("v", OPTIONAL, text_type)
+
+        table = rows_to_columns(good_data, schema)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
+
         for b in bad_data:
             self.assertRaises(Exception, rows_to_columns, [b], schema)
 
@@ -125,8 +128,8 @@ class TestColumns(FuzzyTestCase):
         schema.add("v", REQUIRED, text_type)
         table = rows_to_columns(good_data, schema)
         self.assertEqual(table.values, expected_values)
-        self.assertEqual(table.rep_levels, expected_reps)
-        self.assertEqual(table.def_levels, expected_defs)
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
 
         for b in bad_data:
             self.assertRaises(Exception, rows_to_columns, [b], schema)
@@ -141,9 +144,9 @@ class TestColumns(FuzzyTestCase):
 
         expected_values = {
             "a": ["value0", "value1", "value2", "value3"],
-            "b.c": [NULL, -1, 1, 3, 5, 7, NULL, 9],
-            "b.d": [NULL, 0, 2, 4, 6, NULL, NULL, 10],
-            "b.e.g": [NULL, NULL, NULL, NULL, NULL, NULL, 1, 2, NULL]
+            "b.c": [-1, 1, 3, 5, 7, 9],
+            "b.d": [0, 2, 4, 6, 10],
+            "b.e.g": [1, 2]
         }
 
         expected_reps = {
@@ -170,8 +173,8 @@ class TestColumns(FuzzyTestCase):
 
         table = rows_to_columns(data, schema)
         self.assertEqual(table.values, expected_values)
-        self.assertEqual(table.rep_levels, expected_reps)
-        self.assertEqual(table.def_levels, expected_defs)
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
 
     def test_optional_required_repeated(self):
         data = [
@@ -182,8 +185,8 @@ class TestColumns(FuzzyTestCase):
         ]
 
         expected_values = {
-            "a.b.c": [NULL, 1, 2, 4],
-            "a.b.d": [NULL, NULL, 3, 5, 6]
+            "a.b.c": [1, 2, 4],
+            "a.b.d": [3, 5, 6]
         }
 
         expected_reps = {
@@ -204,8 +207,8 @@ class TestColumns(FuzzyTestCase):
 
         table = rows_to_columns(data, schema)
         self.assertEqual(table.values, expected_values)
-        self.assertEqual(table.rep_levels, expected_reps)
-        self.assertEqual(table.def_levels, expected_defs)
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
 
 
 DREMEL_DATA = [

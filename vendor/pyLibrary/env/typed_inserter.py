@@ -17,7 +17,7 @@ from collections import Mapping
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 
-from future.utils import text_type, binary_type
+from mo_future import text_type, binary_type
 from jx_python.meta import Column
 
 from jx_base import python_type_to_json_type, INTEGER, NUMBER, EXISTS, NESTED, STRING, BOOLEAN, STRUCT, OBJECT
@@ -30,7 +30,7 @@ from mo_logs import Log
 from mo_logs.strings import utf82unicode, quote
 from mo_times.dates import Date
 from mo_times.durations import Duration
-from pyLibrary.env.elasticsearch import parse_properties, random_id
+from pyLibrary.env.elasticsearch import parse_properties, random_id, es_type_to_json_type
 
 append = UnicodeBuilder.append
 
@@ -51,6 +51,7 @@ json_type_to_inserter_type = {
 }
 
 
+
 class TypedInserter(object):
     def __init__(self, es=None, id_column="_id"):
         self.es = es
@@ -60,7 +61,7 @@ class TypedInserter(object):
         if es:
             _schema = Data()
             for c in parse_properties(es.settings.alias, ".", es.get_properties()):
-                if c.type != OBJECT:
+                if c.type not in (OBJECT, NESTED):
                     _schema[c.names["."]] = c
             self.schema = unwrap(_schema)
         else:
@@ -125,6 +126,19 @@ class TypedInserter(object):
 
     def _typed_encode(self, value, sub_schema, path, net_new_properties, _buffer):
         try:
+            if isinstance(sub_schema, Column):
+                value_json_type = python_type_to_json_type[value.__class__]
+                column_json_type = es_type_to_json_type[sub_schema.type]
+
+                if value_json_type == column_json_type:
+                    pass  # ok
+                else:
+                    from mo_logs import Log
+
+                    Log.error("Can not store {{value}} in {{column|quote}}", value=value, column=sub_schema.names['.'])
+
+                sub_schema = {json_type_to_inserter_type[value_json_type]: sub_schema}
+
             if value is None:
                 append(_buffer, '{}')
                 return
@@ -181,24 +195,14 @@ class TypedInserter(object):
                     append(_buffer, ESCAPE_DCT.get(c, c))
                 append(_buffer, '"}')
             elif _type is text_type:
-                if isinstance(sub_schema, Column):
-                    # WE WILL NOT COMPLAIN IF ELASTICSEARCH HAS A PROPERTY FOR THIS ALREADY
-                    if sub_schema.type not in ["keyword", "text", "string"]:
-                        from mo_logs import Log
-                        Log.warning("this is going to fail!")
-                    append(_buffer, '"')
-                    for c in value:
-                        append(_buffer, ESCAPE_DCT.get(c, c))
-                    append(_buffer, '"')
-                else:
-                    if STRING_TYPE not in sub_schema:
-                        sub_schema[STRING_TYPE] = True
-                        net_new_properties.append(path + [STRING_TYPE])
+                if STRING_TYPE not in sub_schema:
+                    sub_schema[STRING_TYPE] = True
+                    net_new_properties.append(path + [STRING_TYPE])
 
-                    append(_buffer, '{'+QUOTED_STRING_TYPE+COLON+'"')
-                    for c in value:
-                        append(_buffer, ESCAPE_DCT.get(c, c))
-                    append(_buffer, '"}')
+                append(_buffer, '{'+QUOTED_STRING_TYPE+COLON+'"')
+                for c in value:
+                    append(_buffer, ESCAPE_DCT.get(c, c))
+                append(_buffer, '"}')
             elif _type in (int, long, Decimal):
                 if NUMBER_TYPE not in sub_schema:
                     sub_schema[NUMBER_TYPE] = True

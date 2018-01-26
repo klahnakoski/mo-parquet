@@ -13,7 +13,7 @@ from __future__ import unicode_literals
 from collections import Mapping
 
 from jx_base import NESTED, python_type_to_json_type, OBJECT
-from mo_dots import concat_field, split_field, join_field, Data
+from mo_dots import concat_field, split_field, join_field, Data, coalesce
 from mo_future import none_type
 from mo_future import sort_using_key, PY2, text_type
 from mo_json.typed_encoder import NESTED_TYPE
@@ -51,7 +51,7 @@ class SchemaTree(object):
         for i, n in enumerate(path[:-1]):
             next = output.more.get(n)
             if next:
-                output = next
+                output = coalesce(next.more.get(NESTED_TYPE), next)
             else:
                 output = output._add_one(join_field(path[0:i + 1]), OPTIONAL, object)
         n = output.more.get(path[-1])
@@ -60,43 +60,51 @@ class SchemaTree(object):
         else:
             return output._add_one(name, repetition_type, type)
 
-
     def _add_one(self, full_name, repetition_type, type):
         simple_name = split_field(full_name)[-1]
-        output = SchemaTree()
-        output.locked = self.locked
+
         ptype, ltype, jtype, itype, length = python_type_to_all_types[type]
-        output.element = SchemaElement(
+        element = SchemaElement(
             name=full_name,
             type=ptype,
             type_length=length,
-            repetition_type=OPTIONAL,
+            repetition_type=repetition_type,
             converted_type=ltype
         )
 
         if repetition_type is REPEATED:
+            if jtype is NESTED:
+                Log.error("not quite sure if you are being redundant, or if you want a 2d array")
+
             parent1 = self.more[simple_name] = SchemaTree()
             parent1.element = SchemaElement(
                 name=full_name,
                 repetition_type=OPTIONAL
             )
+            parent2 = parent1.more[NESTED_TYPE] = SchemaTree()
+            parent2.element = SchemaElement(
+                name=full_name,
+                repetition_type=REPEATED
+            )
 
-            if jtype is NESTED:
-                Log.error("not quite sure if you are being redundant, or if you want a 2d array")
-            elif jtype is OBJECT:
-                parent1.more[NESTED_TYPE] = output
+            if jtype is OBJECT:
+                return parent2
             else:
-                parent2 = parent1.more[NESTED_TYPE] = SchemaTree()
-                parent2.element = SchemaElement(
-                    name=full_name,
-                    repetition_type=REPEATED
-                )
-                parent2.values[itype] = output
+                parent2.values[itype] = element
+                return element
         elif jtype is OBJECT:
-            self.more[full_name] = output
+            output = self.more[simple_name] = SchemaTree()
+            output.locked = self.locked
+            output.element = element
         else:
             parent1 = self.more[simple_name] = SchemaTree()
-            parent1.values[itype] = output
+            parent1.element = SchemaElement(
+                name=full_name,
+                repetition_type=OPTIONAL
+            )
+            parent1.values[itype] = element
+            return element
+
         return output
 
 

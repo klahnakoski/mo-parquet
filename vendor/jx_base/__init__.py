@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from mo_dots import NullType, Data
 from mo_future import text_type, none_type, PY2
+from mo_times import Date
 
 IS_NULL = '0'
 BOOLEAN = 'boolean'
@@ -43,7 +44,8 @@ python_type_to_json_type = {
     dict: OBJECT,
     object: OBJECT,
     Mapping: OBJECT,
-    list: NESTED
+    list: NESTED,
+    Date: NUMBER
 }
 
 if PY2:
