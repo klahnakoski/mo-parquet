@@ -66,7 +66,8 @@ Tests can be found https://github.com/Parquet/parquet-compatibility
 ## Notes 
 
 
-Docs: https://github.com/apache/parquet-format
+General Format: https://github.com/apache/parquet-format
+Encoding Details: https://github.com/apache/parquet-format/blob/master/Encodings.md
 
 Good description: https://github.com/julienledem/redelm/wiki/The-striping-and-assembly-algorithms-from-the-Dremel-paper
 
