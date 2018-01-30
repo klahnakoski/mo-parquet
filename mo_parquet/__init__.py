@@ -12,9 +12,8 @@ from __future__ import unicode_literals
 
 from jx_base import OBJECT, NESTED, STRING
 from mo_dots import concat_field
-from mo_json.typed_encoder import NESTED_TYPE
 from mo_logs import Log
-from mo_parquet.schema import SchemaTree, get_length, get_repetition_type, merge_schema_element, python_type_to_all_types, OPTIONAL
+from mo_parquet.schema import SchemaTree, get_length, get_repetition_type, merge_schema_element, python_type_to_all_types, OPTIONAL, REQUIRED, REPEATED
 from mo_parquet.table import Table
 
 
@@ -34,36 +33,48 @@ def rows_to_columns(data, schema=None):
     defs = {full_name: [] for full_name in all_leaves}
 
     def _none_to_column(schema, path, rep_level, def_level):
-        for l in schema.leaves:
-            full_path = concat_field(path, l)
+        for full_path in schema.leaves:
             reps[full_path].append(rep_level)
             defs[full_path].append(def_level)
 
-    def _value_to_column(value, schema, path, counters):
+    def _value_to_column(value, schema, path, counters, def_level):
         ptype = type(value)
         dtype, ltype, jtype, itype, byte_width = python_type_to_all_types[ptype]
-        if jtype is NESTED:
-            new_path = concat_field(path, NESTED_TYPE)
-            sub_schema = schema.more.get(NESTED_TYPE)
-            if not sub_schema:
-                sub_schema = schema.more[NESTED_TYPE] = SchemaTree()
 
+        if jtype is NESTED:
+            if schema.element.repetition_type != REPEATED:
+                Log.error("Expecting {{path|quote}} to be repeated", path=path)
+
+            new_path = path
             if not value:
-                _none_to_column(sub_schema, new_path, get_rep_level(counters), len(counters)-1)
+                _none_to_column(schema, new_path, get_rep_level(counters), def_level)
             else:
+                sub_schema = schema.more.get('.')
+                if not sub_schema:
+                    sub_schema = SchemaTree()  # ALL VALUES IN REPEATED MUST EXIST
+                    sub_schema.more = schema.more
+
                 for k, new_value in enumerate(value):
                     new_counters = counters + (k,)
-                    _value_to_column(new_value, sub_schema, new_path, new_counters)
+                    _value_to_column(new_value, sub_schema, new_path, new_counters, def_level+1)
         elif jtype is OBJECT:
-            if not value:
-                if schema.element.repetition_type != OPTIONAL:
-                    Log.error("Expecting {{path|quote}} to be optional", path=path)
-                _none_to_column(schema, path, get_rep_level(counters), len(counters))
+            if value is None:
+                if schema.element.repetition_type == REQUIRED:
+                    Log.error("{{path|quote}} is required", path=path)
+                _none_to_column(schema, path, get_rep_level(counters), def_level)
             else:
+                if schema.element.repetition_type == REPEATED:
+                    Log.error("Expecting {{path|quote}} to be repeated", path=path)
+
+                if schema.element.repetition_type == REQUIRED:
+                    new_def_level = def_level
+                else:
+                    new_def_level = def_level+1
+
                 for name, sub_schema in schema.more.items():
                     new_path = concat_field(path, name)
                     new_value = value.get(name, None)
-                    _value_to_column(new_value, sub_schema, new_path, counters)
+                    _value_to_column(new_value, sub_schema, new_path, counters, new_def_level)
 
                 for name in set(value.keys()) - set(schema.more.keys()):
                     if schema.locked:
@@ -71,31 +82,33 @@ def rows_to_columns(data, schema=None):
                     new_path = concat_field(path, name)
                     new_value = value.get(name, None)
                     sub_schema = schema.more[name] = SchemaTree()
-                    _value_to_column(new_value, sub_schema, new_path, counters)
+                    _value_to_column(new_value, sub_schema, new_path, counters, new_def_level)
         else:
-            typed_name = concat_field(path, itype)
             if jtype is STRING:
                 value = value.encode('utf8')
-            element, is_new = merge_schema_element(schema.values.get(itype), typed_name, value, ptype, ltype, dtype, jtype, itype, byte_width)
+            element, is_new = merge_schema_element(schema.element, path, value, ptype, ltype, dtype, jtype, itype, byte_width)
             if is_new:
                 if schema.locked:
                     Log.error("Not expecting a new value at {{path|quote}}", path=path)
-                schema.values[itype] = element
+                schema.element = element
                 new_schema.append(element)
-                values[typed_name] = []
-                reps[typed_name] = [0] * counters[0]
-                defs[typed_name] = [0] * counters[0]
+                values[path] = []
+                reps[path] = [0] * counters[0]
+                defs[path] = [0] * counters[0]
 
-            values[typed_name].append(value)
-            if schema.element.repetition_type == OPTIONAL:
-                reps[typed_name].append(get_rep_level(counters))
-                defs[typed_name].append(len(counters))
+            values[path].append(value)
+            if schema.element.repetition_type == REQUIRED:
+                reps[path].append(get_rep_level(counters))
+                defs[path].append(def_level)
             else:
-                reps[typed_name].append(get_rep_level(counters))
-                defs[typed_name].append(len(counters) - 1)
+                reps[path].append(get_rep_level(counters))
+                defs[path].append(def_level+1)
 
     for rownum, new_value in enumerate(data):
-        _value_to_column(new_value, schema, '.', (rownum,))
+        try:
+            _value_to_column(new_value, schema, '.', (rownum,), 0)
+        except Exception as e:
+            Log.error("can not encode {{row|json}}", row=new_value, cause=e)
 
     return Table(values, reps, defs, len(data), schema)
 

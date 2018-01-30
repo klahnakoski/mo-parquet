@@ -9,7 +9,8 @@ from __future__ import unicode_literals
 from itertools import product
 
 from mo_dots import join_field
-from mo_parquet import rows_to_columns, REPEATED, rows_to_columns, OPTIONAL, REQUIRED
+from mo_parquet import rows_to_columns
+from mo_parquet.schema import REPEATED, REQUIRED, OPTIONAL, SchemaTree
 from mo_testing.fuzzytestcase import FuzzyTestCase
 
 counter = [0]
@@ -43,7 +44,7 @@ def make_optional(name, child):
     def output_opt():
         yield (
             {name: None} if name else None,
-            [None],
+            [],
             [0],
             [0]
         )
@@ -53,7 +54,7 @@ def make_optional(name, child):
             yield (
                 {name: ss} if name else ss,
                 vv,
-                [0] + [rrr + 1 for rrr in rr[1:]],
+                rr,
                 [ddd + 1 for ddd in dd]
             )
 
@@ -64,7 +65,7 @@ def make_repeated(name, child):
     def output_rep():
         yield (
             {name: []} if name else [],
-            [None],
+            [],
             [0],
             [0]
         )
@@ -109,18 +110,13 @@ class TestGenerated(FuzzyTestCase):
         expected_reps = {"a.b": sum(rep_level, [])}
         expected_defs = {"a.b": sum(def_level, [])}
 
-        all_names = ["a.b"]
-        values, reps = rows_to_columns(list(data), all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
-
-        nature = {
-            ".": REPEATED,
-            "a": REPEATED,
-            "a.b": REPEATED
-        }
-        defs = rows_to_columns(list(data), all_names, nature)
-        self.assertEqual(defs, expected_defs)
+        schema=SchemaTree()
+        schema.add("a", REPEATED, object)
+        schema.add("a.b", REPEATED, int)
+        table = rows_to_columns(list(data), schema)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
 
     def test_required(self):
         self._run_test([
@@ -169,33 +165,31 @@ class TestGenerated(FuzzyTestCase):
         """
         generator = make_const
         for c in reversed(config):
-            for k, v in c.items()[:1]:
-                generator = nature_to_generator[v](k, generator)
+            for name, rep_type in c.items()[:1]:
+                generator = rep_type_to_generator[rep_type](name, generator)
 
-        nature = {".": REPEATED}
-        acc = []
+        schema = SchemaTree(locked=True)
+        path = []
         for c in config:
-            for k, v in c.items()[:1]:
-                acc.append(k)
-                nature[join_field(acc)] = v
+            for name, rep_type in c.items()[:1]:
+                path.append(name)
+                schema.add(join_field(path), rep_type, int)
 
-        full_name = join_field([k for c in config for k, v in c.items()[:1]])
+        # THESE TESTS ASSUME ONLY ONE LEAF
+        full_name = join_field([name for c in config for name, rep_type in c.items()[:1]])
 
         data, values, rep_level, def_level = zip(*list(generator()))
         expected_values = {full_name: sum(values, [])}
         expected_reps = {full_name: sum(rep_level, [])}
         expected_defs = {full_name: sum(def_level, [])}
 
-        all_names = [full_name]
-        values, reps = rows_to_columns(list(data), all_names)
-        self.assertEqual(values, expected_values)
-        self.assertEqual(reps, expected_reps)
-
-        defs = rows_to_columns(list(data), all_names, nature)
-        self.assertEqual(defs, expected_defs)
+        table = rows_to_columns(list(data), schema)
+        self.assertEqual(table.values, expected_values)
+        self.assertEqual(table.reps, expected_reps)
+        self.assertEqual(table.defs, expected_defs)
 
 
-nature_to_generator = {
+rep_type_to_generator = {
     REPEATED: make_repeated,
     OPTIONAL: make_optional,
     REQUIRED: make_required

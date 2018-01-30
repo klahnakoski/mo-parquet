@@ -74,7 +74,10 @@ class TestColumns(FuzzyTestCase):
         expected_reps = {"v": [0, 0, 0, 0, 1]}
         expected_defs = {"v": [0, 0, 1, 1, 1]}
 
-        table = rows_to_columns(data)
+        schema=SchemaTree(locked=True)
+        schema.add("v", (REPEATED, OPTIONAL), object)
+
+        table = rows_to_columns(data, schema)
         self.assertEqual(table.values, expected_values)
         self.assertEqual(table.reps, expected_reps)
         self.assertEqual(table.defs, expected_defs)
@@ -95,7 +98,7 @@ class TestColumns(FuzzyTestCase):
 
         expected_values = {"v": ["legit value"]}
         expected_reps = {"v": [0, 0]}
-        expected_defs = {"v": [1, 1]}
+        expected_defs = {"v": [0, 1]}
 
         schema = SchemaTree(locked=True)
         schema.add("v", OPTIONAL, text_type)
@@ -164,7 +167,7 @@ class TestColumns(FuzzyTestCase):
         }
 
         schema = SchemaTree(locked=True)
-        schema.add("a", REQUIRED, int)
+        schema.add("a", REQUIRED, text_type)
         schema.add("b", REPEATED, object)
         schema.add("b.c", OPTIONAL, int)
         schema.add("b.d", OPTIONAL, int)
@@ -203,7 +206,7 @@ class TestColumns(FuzzyTestCase):
         schema.add("a", OPTIONAL, object)
         schema.add("a.b", REQUIRED, object)
         schema.add("a.b.c", REQUIRED, int)
-        schema.add("a.b.d", REQUIRED, int)
+        schema.add("a.b.d", REPEATED, int)
 
         table = rows_to_columns(data, schema)
         self.assertEqual(table.values, expected_values)

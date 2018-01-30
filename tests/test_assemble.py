@@ -10,7 +10,7 @@ from mo_testing.fuzzytestcase import FuzzyTestCase
 
 
 class TestColumns(FuzzyTestCase):
-    def test_asemble(self):
-        expected = {
+    def test_assemble(self):
+        expected = {}
 
 

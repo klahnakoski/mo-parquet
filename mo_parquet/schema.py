@@ -16,7 +16,6 @@ from jx_base import NESTED, python_type_to_json_type, OBJECT
 from mo_dots import concat_field, split_field, join_field, Data, coalesce
 from mo_future import none_type
 from mo_future import sort_using_key, PY2, text_type
-from mo_json.typed_encoder import NESTED_TYPE
 from mo_logs import Log
 from parquet_thrift.parquet.ttypes import Type, FieldRepetitionType, SchemaElement, ConvertedType
 from pyLibrary.env.typed_inserter import json_type_to_inserter_type
@@ -26,6 +25,8 @@ REQUIRED = FieldRepetitionType.REQUIRED
 OPTIONAL = FieldRepetitionType.OPTIONAL
 REPEATED = FieldRepetitionType.REPEATED
 
+DEFAULT_RECORD = SchemaElement(name='.', repetition_type=REQUIRED)   # DREMEL ASSUME ALL RECORDS ARE REQUIRED
+
 
 class SchemaTree(object):
 
@@ -33,9 +34,8 @@ class SchemaTree(object):
         """
         :param locked: DO NOT ALLOW SCHEMA EXPANSION
         """
-        self.element = None
+        self.element = DEFAULT_RECORD
         self.more = {}  # MAP FROM NAME TO MORE SchemaTree
-        self.values = {}  # MAP FROM JSON TYPE TO SchemaElement
         self.diff_schema = []  # PLACEHOLDER OR NET-NEW COLUMNS ADDED DURING SCHEMA EXPANSION
         self.locked = locked
 
@@ -51,7 +51,7 @@ class SchemaTree(object):
         for i, n in enumerate(path[:-1]):
             next = output.more.get(n)
             if next:
-                output = coalesce(next.more.get(NESTED_TYPE), next)
+                output = next
             else:
                 output = output._add_one(join_field(path[0:i + 1]), OPTIONAL, object)
         n = output.more.get(path[-1])
@@ -62,58 +62,40 @@ class SchemaTree(object):
 
     def _add_one(self, full_name, repetition_type, type):
         simple_name = split_field(full_name)[-1]
-
         ptype, ltype, jtype, itype, length = python_type_to_all_types[type]
-        element = SchemaElement(
+
+        if not isinstance(repetition_type, (list, tuple)):
+            repetition_type = [repetition_type]
+
+        last = first = self.more[simple_name] = SchemaTree()
+        last.locked = self.locked
+
+        for rt in repetition_type[:-1]:
+            last.element = SchemaElement(
+                name=full_name,
+                repetition_type=rt
+            )
+            temp = last.more['.'] = SchemaTree()
+            temp.locked = self.locked
+            last = temp
+
+        last.element = SchemaElement(
             name=full_name,
             type=ptype,
             type_length=length,
-            repetition_type=repetition_type,
+            repetition_type=repetition_type[-1],
             converted_type=ltype
         )
 
-        if repetition_type is REPEATED:
-            if jtype is NESTED:
-                Log.error("not quite sure if you are being redundant, or if you want a 2d array")
-
-            parent1 = self.more[simple_name] = SchemaTree()
-            parent1.element = SchemaElement(
-                name=full_name,
-                repetition_type=OPTIONAL
-            )
-            parent2 = parent1.more[NESTED_TYPE] = SchemaTree()
-            parent2.element = SchemaElement(
-                name=full_name,
-                repetition_type=REPEATED
-            )
-
-            if jtype is OBJECT:
-                return parent2
-            else:
-                parent2.values[itype] = element
-                return element
-        elif jtype is OBJECT:
-            output = self.more[simple_name] = SchemaTree()
-            output.locked = self.locked
-            output.element = element
-        else:
-            parent1 = self.more[simple_name] = SchemaTree()
-            parent1.element = SchemaElement(
-                name=full_name,
-                repetition_type=OPTIONAL
-            )
-            parent1.values[itype] = element
-            return element
-
-        return output
+        return first
 
 
     def __getitem__(self, name):
         def _get(node, path):
-            if node.more:
-                return _get(node.more[path[0]], path[1:])
-            else:
-                return node.values[path[0]]
+            if not path:
+                return self.element
+
+            return _get(node.more[path[0]], path[1:])
 
         return _get(self, split_field(name))
 
@@ -124,10 +106,6 @@ class SchemaTree(object):
         def _worker(start):
             output = SchemaTree()
             root = parquet_schema[index[0]]
-            if root.type:
-                ptype, ltype, jtype, itype = python_type_to_all_types[root.type]
-                output.values[itype] = root
-                return output
 
             output.element = root
             max = start + root.num_children
@@ -138,15 +116,23 @@ class SchemaTree(object):
                 output.more[name] = child
             return output
 
-        return _worker(0).more['.']
+        output = _worker(0).more['.']
+        output.element = SchemaElement(
+            name='.',
+            repetition_type=REQUIRED
+        )
+
 
     @property
     def leaves(self):
-        return [itype for itype in self.values.keys()] + [
-                   concat_field(name, leaf)
-                   for name, child_schema in self.more.items()
-                   for leaf in child_schema.leaves
-               ]
+        output = set(
+            leaf
+            for name, child_schema in self.more.items()
+            for leaf in child_schema.leaves
+        )
+        output.add(self.element.name)
+
+        return output
 
     def get_parquet_metadata(
         self,
@@ -160,7 +146,8 @@ class SchemaTree(object):
         children = []
         for name, child_schema in sort_using_key(self.more.items(), lambda p: p[0]):
             children.extend(child_schema.get_parquet_metadata(concat_field(path, name)))
-        children.extend(v for k, v in sort_using_key(self.values.items(), lambda p: p[0]))
+        if self.element.type:
+            children.append(self.element)
 
         return [parquet_thrift.SchemaElement(
             name=path,
@@ -168,11 +155,12 @@ class SchemaTree(object):
         )] + children
 
     def max_definition_level(self):
-        if not self.more:
-            return 1
-        else:
+        self_level = 1 if self.element and self.element.repetition_type != REQUIRED else 0
+        if self.more:
             max_child = [m.max_definition_level() for m in self.more.values()]
-            return max(max_child) + 1
+            return max(max_child) + self_level
+        else:
+            return self_level
 
 
 def get_length(dtype, value=None):
