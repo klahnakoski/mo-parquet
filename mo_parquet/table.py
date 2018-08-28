@@ -13,7 +13,7 @@ from __future__ import unicode_literals
 import pandas as pd
 
 from jx_base.expressions import extend
-from mo_dots import split_field, startswith_field, coalesce, join_field
+from mo_dots import split_field, startswith_field, coalesce, join_field, Null
 from mo_future import text_type
 from mo_json.typed_encoder import TYPE_PREFIX
 
@@ -34,9 +34,10 @@ class Table(object):
         self.values = {untype_path(k): v for k, v in values.items()}
         self.reps = {untype_path(k): v for k, v in reps.items()}
         self.defs = {untype_path(k): v for k, v in defs.items()}
+        self.index = Null
         self.num_rows = num_rows
         self.schema = schema
-        self.max_definition_level = max_definition_level or schema.max_definition_level()
+        self.max_definition_level = max_definition_level or schema.max_definition_level('.')
 
     def __getattr__(self, item):
         return getattr(self.values, item)
@@ -117,10 +118,6 @@ class Column(object):
     """
 
     def __init__(self, name, values, reps, defs, num_rows, schema, max_definition_level):
-        """
-        :param values: MAP FROM NAME TO LIST OF PARQUET VALUES
-        :param schema:
-        """
         self.name = name
         self.values = values
         self.reps = reps
@@ -132,6 +129,9 @@ class Column(object):
     def __len__(self):
         return self.num_rows
 
+    @property
+    def dtype(self):
+        return self.schema.numpy_type
 
 
 eq_backup = pd.DataFrame.__eq__

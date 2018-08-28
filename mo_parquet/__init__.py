@@ -10,7 +10,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
-from jx_base import OBJECT, NESTED, STRING
+from jx_base import OBJECT, NESTED, STRING, PRIMITIVE, python_type_to_json_type
 from mo_dots import concat_field
 from mo_logs import Log
 from mo_parquet.schema import SchemaTree, get_length, get_repetition_type, merge_schema_element, python_type_to_all_types, OPTIONAL, REQUIRED, REPEATED
@@ -39,7 +39,7 @@ def rows_to_columns(data, schema=None):
 
     def _value_to_column(value, schema, path, counters, def_level):
         ptype = type(value)
-        dtype, ltype, jtype, itype, byte_width = python_type_to_all_types[ptype]
+        ntype, dtype, ltype, jtype, itype, byte_width = python_type_to_all_types[ptype]
 
         if jtype is NESTED:
             if schema.element.repetition_type != REPEATED:
@@ -81,21 +81,20 @@ def rows_to_columns(data, schema=None):
                         Log.error("{{path}} is not allowed in the schema", path=path)
                     new_path = concat_field(path, name)
                     new_value = value.get(name, None)
-                    sub_schema = schema.more[name] = SchemaTree()
+                    sub_schema = schema.add(
+                        new_path,
+                        REPEATED if isinstance(new_value, list) else OPTIONAL,
+                        type(new_value)
+                    )
+                    if python_type_to_json_type[type(new_value)] in PRIMITIVE:
+                        values[new_path] = []
+                        reps[new_path] = [0] * counters[0]
+                        defs[new_path] = [0] * counters[0]
                     _value_to_column(new_value, sub_schema, new_path, counters, new_def_level)
         else:
             if jtype is STRING:
                 value = value.encode('utf8')
-            element, is_new = merge_schema_element(schema.element, path, value, ptype, ltype, dtype, jtype, itype, byte_width)
-            if is_new:
-                if schema.locked:
-                    Log.error("Not expecting a new value at {{path|quote}}", path=path)
-                schema.element = element
-                new_schema.append(element)
-                values[path] = []
-                reps[path] = [0] * counters[0]
-                defs[path] = [0] * counters[0]
-
+            merge_schema_element(schema.element, path, value, ptype, ltype, dtype, jtype, itype, byte_width)
             values[path].append(value)
             if schema.element.repetition_type == REQUIRED:
                 reps[path].append(get_rep_level(counters))
