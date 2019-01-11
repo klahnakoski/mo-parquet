@@ -74,7 +74,7 @@ class TestColumns(FuzzyTestCase):
         expected_defs = {"v": [0, 0, 1, 1, 1]}
 
         schema = SchemaTree(locked=True)
-        schema.add("v", (REPEATED, OPTIONAL), object)
+        schema.add("v", (REPEATED, OPTIONAL), text_type)
 
         table = rows_to_columns(data, schema)
         self.assertEqual(table.values, expected_values)

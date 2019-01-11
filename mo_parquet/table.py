@@ -6,14 +6,12 @@
 #
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import pandas as pd
 
 from jx_base.expressions import extend
-from mo_dots import split_field, startswith_field, coalesce, join_field, Null
+from mo_dots import Null, coalesce, join_field, split_field, startswith_field
 from mo_future import text_type
 from mo_json.typed_encoder import TYPE_PREFIX
 
@@ -37,27 +35,27 @@ class Table(object):
         self.index = Null
         self.num_rows = num_rows
         self.schema = schema
-        self.max_definition_level = max_definition_level or schema.max_definition_level('.')
 
     def __getattr__(self, item):
         return getattr(self.values, item)
 
-    def get_column(self, item):
+    def get_column(self, name):
         sub_schema = self.schema
-        for n in split_field(item):
+        for n in split_field(name):
             if n in sub_schema.more:
                 sub_schema = sub_schema.more.get(n)
             else:
                 sub_schema = sub_schema.values.get(n)
 
         return Column(
-            item,
-            self.values[item],
-            self.reps[item],
-            self.defs[item],
+            name,
+            self.values[name],
+            self.reps[name],
+            self.defs[name],
             self.num_rows,
             sub_schema,
-            self.max_definition_level
+            self.schema.max_repetition_level(name),
+            self.schema.max_definition_level(name)
         )
 
     @property
@@ -117,13 +115,14 @@ class Column(object):
     REPRESENT A DATA FRAME
     """
 
-    def __init__(self, name, values, reps, defs, num_rows, schema, max_definition_level):
+    def __init__(self, name, values, reps, defs, num_rows, schema, max_repetition_level, max_definition_level):
         self.name = name
         self.values = values
         self.reps = reps
         self.defs = defs
         self.num_rows = num_rows
         self.schema = schema
+        self.max_repetition_level = max_repetition_level
         self.max_definition_level = max_definition_level
 
     def __len__(self):

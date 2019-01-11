@@ -1,13 +1,13 @@
 """encoding.py - methods for reading parquet encoded data blocks."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 from itertools import izip
 
 import numba
+
 from fastparquet.encoding import _mask_for_bits
+from mo_future import binary_type
 
 
 @numba.njit(nogil=True)
@@ -50,7 +50,10 @@ class Encoder(object):
         return bytearray(self.data)
 
     def bytes(self, data):
-        self.data.extend(data)
+        if isinstance(data, binary_type):
+            self.data.extend(bytearray(data))
+        else:
+            self.data.extend(data)
 
     def byte(self, value):
         self.data.append(value)

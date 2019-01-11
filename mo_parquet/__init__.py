@@ -6,14 +6,14 @@
 #
 # Author: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
-from mo_dots import concat_field
-from mo_json import NESTED, OBJECT, python_type_to_json_type, PRIMITIVE, STRING
+import numpy as np
+
+from mo_dots import concat_field, startswith_field
+from mo_json import NESTED, OBJECT, PRIMITIVE, STRING, python_type_to_json_type
 from mo_logs import Log
-from mo_parquet.schema import SchemaTree, get_length, get_repetition_type, merge_schema_element, python_type_to_all_types, OPTIONAL, REQUIRED, REPEATED
+from mo_parquet.schema import OPTIONAL, REPEATED, REQUIRED, SchemaTree, get_length, get_repetition_type, merge_schema_element, python_type_to_all_types
 from mo_parquet.table import Table
 
 
@@ -25,7 +25,6 @@ def rows_to_columns(data, schema=None):
     """
     if not schema:
         schema = SchemaTree()
-    new_schema = []
 
     all_leaves = schema.leaves
     values = {full_name: [] for full_name in all_leaves}
@@ -33,9 +32,10 @@ def rows_to_columns(data, schema=None):
     defs = {full_name: [] for full_name in all_leaves}
 
     def _none_to_column(schema, path, rep_level, def_level):
-        for full_path in schema.leaves:
-            reps[full_path].append(rep_level)
-            defs[full_path].append(def_level)
+        for full_path in all_leaves:
+            if startswith_field(full_path, path):
+                reps[full_path].append(rep_level)
+                defs[full_path].append(def_level)
 
     def _value_to_column(value, schema, path, counters, def_level):
         ptype = type(value)
@@ -49,14 +49,17 @@ def rows_to_columns(data, schema=None):
             if not value:
                 _none_to_column(schema, new_path, get_rep_level(counters), def_level)
             else:
-                sub_schema = schema.more.get('.')
-                if not sub_schema:
-                    sub_schema = SchemaTree()  # ALL VALUES IN REPEATED MUST EXIST
-                    sub_schema.more = schema.more
-
-                for k, new_value in enumerate(value):
-                    new_counters = counters + (k,)
-                    _value_to_column(new_value, sub_schema, new_path, new_counters, def_level+1)
+                try:
+                    new_schema = schema.more.get('.')
+                    if not new_schema:
+                        # DEFAULT TO REQUIRED ENTRIES
+                        new_schema = schema
+                        schema.element.repetition_type = REQUIRED
+                    for k, new_value in enumerate(value):
+                        new_counters = counters + (k,)
+                        _value_to_column(new_value, new_schema, new_path, new_counters, def_level+1)
+                finally:
+                    schema.element.repetition_type = REPEATED
         elif jtype is OBJECT:
             if value is None:
                 if schema.element.repetition_type == REQUIRED:
@@ -119,24 +122,80 @@ def get_rep_level(counters):
     return 0  # SHOULD BE -1 FOR MISSING RECORD, BUT WE WILL ASSUME THE RECORD EXISTS
 
 
-def assemble(values, reps, defs, schema):
-    max = schema.max_definition_level()+1
+class DremelParser(object):
+    """
+    WE WILL 'PARSE' THE DREMEL ENCODED ARRAYS INTO DATA
+    """
 
-    def _add(value, rep_level, def_level, parents):
-        if def_level == len(parents):
-            new_parents = parents[0:rep_level + 1]
-            for _ in range(rep_level, max):
-                new_child = []
-                new_parents[-1].append(new_child)
-                new_parents.append(new_child)
-            new_parents[-1].append(value)
+    def __init__(self, table, rep_depth=0, columns=None):
+        # TODO: USE THE columns TO BUILD A RESTRICTED schema
+        # self.schema = table.schema.select(columns)
+        self.schema = schema = table.schema
+
+        self.rep_depth = rep_depth
+        self.values = table.values
+        # DESTRUCTIVELY USE defs TO COUNT-DOWN TO ZERO
+        self.defs = {c: table.schema.max_definition_level(c)-table.defs[c] for c in schema.columns}
+        # WE ARE DESTRUCTIVE TO THE REP COUNTERS
+        self.reps = {c: np.copy(table.reps[c]) for c in schema.columns}
+        self.vi = {c: 0 for c in schema.columns}
+        self.i = {c: 0 for c in schema.columns}
+
+    def next_row(self):
+        return self.assemble_required(self.schema)
+
+    def assemble_required(self, schema):
+        if self.i.get(schema.name) is None or self.defs[schema.name][self.i[schema.name]]:
+            output = {}
+            for name, sub_schema in schema.more.items():
+                output[name] = assemble[sub_schema.repetition_type](self, sub_schema)
+            return output
         else:
-            new_parents = parents[0:def_level + 1]
-            new_parents.append(None)
+            output = self.values[schema.name]
+            self.vi[schema.name] += 1
+            self.i[schema.name] += 1
+            return output
 
-    rows = []
-    parents = [rows]
-    for value, rep_level, def_level in zip(values, defs, reps):
-        _add(parents, value, rep_level, def_level)
+    def assemble_optional(self, schema):
+        if self.i.get(schema.name) is None or self.defs[schema.name][self.i[schema.name]]:
+            output = {}
+            for name, sub_schema in schema.more.items():
+                self.defs[schema.name][self.i[schema.name]] -= 1
+                output[name] = assemble[sub_schema.repetition_type](self, sub_schema)
+            return output
+        else:
+            output = self.values[schema.name]
+            self.vi[schema.name] += 1
+            self.i[schema.name] += 1
+            return output
+
+    def assemble_repeated(self, schema):
+        if self.i.get(schema.name) is None or self.defs[schema.name][self.i[schema.name]]:
+            output = []
+            columns = schema.columns
+
+
+
+            is_done = {c: False for c in columns}
+            while not all(is_done[c] for c in columns):
+
+                row = {}
+                for name, sub_schema in schema.more.items():
+                    value = self.assemble_required(sub_schema)
+                    row[name] = value
+                output.append(row)
+            return output
+        else:
+            output = self.values[schema.name][self.i[schema.name]]
+            self.vi[schema.name] += 1
+            self.i[schema.name] += 1
+            return output
+
+
+assemble = {
+    REQUIRED: DremelParser.assemble_required,
+    OPTIONAL: DremelParser.assemble_optional,
+    REPEATED: DremelParser.assemble_repeated
+}
 
 
