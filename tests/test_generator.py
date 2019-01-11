@@ -8,6 +8,8 @@ from __future__ import unicode_literals
 
 from itertools import product
 
+from mo_future import items
+
 from mo_dots import join_field
 from mo_parquet import rows_to_columns
 from mo_parquet.schema import REPEATED, REQUIRED, OPTIONAL, SchemaTree
@@ -165,18 +167,18 @@ class TestGenerated(FuzzyTestCase):
         """
         generator = make_const
         for c in reversed(config):
-            for name, rep_type in c.items()[:1]:
+            for name, rep_type in items(c)[:1]:
                 generator = rep_type_to_generator[rep_type](name, generator)
 
         schema = SchemaTree(locked=True)
         path = []
         for c in config:
-            for name, rep_type in c.items()[:1]:
+            for name, rep_type in items(c)[:1]:
                 path.append(name)
                 schema.add(join_field(path), rep_type, int)
 
         # THESE TESTS ASSUME ONLY ONE LEAF
-        full_name = join_field([name for c in config for name, rep_type in c.items()[:1]])
+        full_name = join_field([name for c in config for name, rep_type in items(c)[:1]])
 
         data, values, rep_level, def_level = zip(*list(generator()))
         expected_values = {full_name: sum(values, [])}

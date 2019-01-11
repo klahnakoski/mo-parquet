@@ -6,7 +6,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import unicode_literals
 
-from jx_base import STRING
 from mo_future import text_type
 from mo_logs import Log
 from mo_parquet import rows_to_columns, SchemaTree
@@ -17,17 +16,17 @@ from mo_testing.fuzzytestcase import FuzzyTestCase
 class TestColumns(FuzzyTestCase):
 
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         Log.start()
 
     def test_dremel_rep_values(self):
         expected_values = {
             "DocId": [10, 20],
-            "Name.Url": ["http://A", "http://B", "http://C"],
+            "Name.Url": [b"http://A", b"http://B", b"http://C"],
             "Links.Forward": [20, 40, 60, 80],
             "Links.Backward": [10, 30],
-            "Name.Language.Code": ["en-us", "en", "en-gb"],
-            "Name.Language.Country": ["us", "gb"]
+            "Name.Language.Code": [b"en-us", b"en", b"en-gb"],
+            "Name.Language.Country": [b"us", b"gb"]
         }
         expected_reps = {
             "DocId": [0, 0],
@@ -74,7 +73,7 @@ class TestColumns(FuzzyTestCase):
         expected_reps = {"v": [0, 0, 0, 0, 1]}
         expected_defs = {"v": [0, 0, 1, 1, 1]}
 
-        schema=SchemaTree(locked=True)
+        schema = SchemaTree(locked=True)
         schema.add("v", (REPEATED, OPTIONAL), object)
 
         table = rows_to_columns(data, schema)
@@ -96,7 +95,7 @@ class TestColumns(FuzzyTestCase):
             {"v": [None, None]}
         ]
 
-        expected_values = {"v": ["legit value"]}
+        expected_values = {"v": [b"legit value"]}
         expected_reps = {"v": [0, 0]}
         expected_defs = {"v": [0, 1]}
 
@@ -123,7 +122,7 @@ class TestColumns(FuzzyTestCase):
             {"v": [None, None]}
         ]
 
-        expected_values = {"v": ["legit value"]}
+        expected_values = {"v": [b"legit value"]}
         expected_reps = {"v": [0]}
         expected_defs = {"v": [0]}
 
@@ -146,7 +145,7 @@ class TestColumns(FuzzyTestCase):
         ]
 
         expected_values = {
-            "a": ["value0", "value1", "value2", "value3"],
+            "a": [b"value0", b"value1", b"value2", b"value3"],
             "b.c": [-1, 1, 3, 5, 7, 9],
             "b.d": [0, 2, 4, 6, 10],
             "b.e.g": [1, 2]
