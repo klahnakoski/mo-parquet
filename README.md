@@ -12,7 +12,7 @@ This project exists to understand the [Dremel encoding](https://static.googleuse
 
 ## Code
 
-Work is proceeding on [my fork of fastparquet](https://github.com/klahnakoski/fastparquet/blob/nested/fastparquet/json_writer.py)
+Work is proceeding on [my fork of fastparquet](https://github.com/klahnakoski/fastparquet/blob/nested/fastparquet/json_writer.py).  The `mo_parquet` subdirectory has been synched to that project for use in the encoding/decoding steps.
 
 ## Analysis
 
