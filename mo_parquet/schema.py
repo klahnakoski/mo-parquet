@@ -16,7 +16,7 @@ import numpy
 from fastparquet.parquet_thrift.parquet.ttypes import ConvertedType, FieldRepetitionType, SchemaElement, Type
 from jx_python.jx import count
 from mo_dots import Data, coalesce, concat_field, join_field, relative_field, split_field
-from mo_future import PY2, none_type, sort_using_key, text_type
+from mo_future import PY2, none_type, sort_using_key, text_type, is_text
 from mo_json import NESTED, python_type_to_json_type
 from mo_json.typed_encoder import json_type_to_inserter_type
 from mo_logs import Log
@@ -40,31 +40,31 @@ class SchemaTree(object):
         self.locked = locked
         self.numpy_type = None
 
-    def add(self, name, repetition_type, type):
+    def add(self, full_name, repetition_type, type):
         """
-        :param name: dot delimited path to the property (use dot (".") for none)
+        :param full_name: dot delimited path to the property (use dot (".") for none)
         :param repetition_type: one of OPTIONAL or NESTED (REQUIRED is not possible)
         :param json_type: the json type to store
         :return:
         """
         base_name = self.element.name
-        path = split_field(relative_field(name, base_name))
+        simple_name = relative_field(full_name, base_name)
+        path = split_field(simple_name)
         output = self
-        for i, n in enumerate(path[:-1]):
-            next = output.more.get(n)
-            if next:
-                output = next
-            else:
-                output = output._add_one(concat_field(base_name, join_field(path[0:i + 1])), OPTIONAL, object)
-        n = output.more.get(path[-1])
-        if n:
-            Log.error("can not redefine a property")
-        else:
-            return output._add_one(name, repetition_type, type)
 
-    def _add_one(self, full_name, repetition_type, type):
-        simple_name = split_field(full_name)[-1]
-        ntype, ptype, ltype, jtype, itype, length = python_type_to_all_types[type]
+        if len(path) == 0:
+            return output._add_one('.', full_name, repetition_type, type)
+        else:
+            fname = base_name
+            for p in path[:-1]:
+                fname = concat_field(fname, p)
+                n = output.more.get(p)
+                output = n or output._add_one(p, fname, OPTIONAL, object)
+
+            output._add_one(path[-1], full_name, repetition_type, type)
+
+    def _add_one(self, simple_name, full_name, repetition_type, ptype):
+        ntype, dtype, ltype, jtype, itype, length = python_type_to_all_types[ptype]
 
         if not isinstance(repetition_type, (list, tuple)):
             repetition_type = [repetition_type]
@@ -84,14 +84,13 @@ class SchemaTree(object):
 
         last.element = SchemaElement(
             name=full_name,
-            type=ptype,
+            type=dtype,
             type_length=length,
             repetition_type=repetition_type[-1],
             converted_type=ltype
         )
 
         return first
-
 
     def __getitem__(self, name):
         def _get(node, path):
@@ -156,37 +155,33 @@ class SchemaTree(object):
         if isinstance(path, text_type):
             path = split_field(path)
         output = self
-        for p in path:
-            output = output.more.get(p)
-            if output is None:
-                return None
         while '.' in output.more:
             output = output.more['.']
-        return output.element
+        for p in path:
+            output = output.more.get(p)
+            while '.' in output.more:
+                output = output.more['.']
+        return output.element if output else None
 
     def _path_to_schema_element(self, path):
-        if isinstance(path, text_type):
-            def _find(sub_schema):
-                if sub_schema.element.name==path:
-                    return (sub_schema,)
+        if is_text(path):
+            path = split_field(path)
 
-                for m in sub_schema.more.values():
-                    p = _find(m)
-                    if p:
-                        return (sub_schema, )+p
+        last = self
+        output = [self]
+        while '.' in last.more:
+            last = last.more['.']
+            output.append(last)
 
-            return _find(self)
-        else:
-            output = [self]
-            for p in path:
-                next = output[-1].more.get(p)
-                if next is None:
-                    return []
-                else:
-                    output.append(next)
-            while '.' in output[-1].more:
-                output.append(output[-1].more['.'])
-            return output
+        for p in path:
+            last = last.more[p]
+            output.append(last)
+
+            while '.' in last.more:
+                last = last.more['.']
+                output.append(last)
+
+        return output
 
     def is_required(self, path):
         return self.schema_element(path).repetition_type == REQUIRED
@@ -199,6 +194,10 @@ class SchemaTree(object):
         path = self._path_to_schema_element(path)
         return count(p for p in path if p.element.repetition_type == REPEATED)
 
+    def lock(self):
+        self.locked = True
+        for m in self.more.values():
+            m.lock()
 
     def get_parquet_metadata(
         self,
@@ -236,6 +235,8 @@ def get_repetition_type(jtype):
 
 
 def merge_schema_element(element, name, value, ptype, ltype, dtype, jtype, ittype, length):
+    if element.type is not dtype:
+        Log.error("Expecting mathcing types")
     element.type_length = MAX((element.type_length, length))
     return element
 
@@ -299,7 +300,7 @@ if PY2:
     all_type_to_length[long] = 8
 
 
-# MAP FROM PYTHON TYPE TO (parquet_type, parquet_logical_type, json_type, inserter_type)
+# MAP FROM PYTHON TYPE TO (numpy_data_type, parquet_type, parquet_logical_type, json_type, inserter_type, length)
 python_type_to_all_types = {
     ptype: (
         all_type_to_numpy_type[ptype],

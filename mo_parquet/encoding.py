@@ -150,24 +150,3 @@ class Encoder(object):
         self.set_fixed_int(len(self) - all_start, 4, all_start - 4)
 
 
-def assemble(values, rep_levels, def_levels, schema):
-    max = schema.max_definition_level()+1
-
-    def _add(value, rep_level, def_level, parents):
-        if def_level == len(parents):
-            new_parents = parents[0:rep_level + 1]
-            for _ in range(rep_level, max):
-                new_child = []
-                new_parents[-1].append(new_child)
-                new_parents.append(new_child)
-            new_parents[-1].append(value)
-        else:
-            new_parents = parents[0:def_level + 1]
-            new_parents.append(None)
-
-    rows = []
-    parents = [rows]
-    for value, rep_level, def_level in zip(values, def_levels, rep_levels):
-        _add(parents, value, rep_level, def_level)
-
-

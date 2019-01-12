@@ -9,16 +9,19 @@
 from __future__ import absolute_import, division, unicode_literals
 
 import pandas as pd
+import numpy as np
 
 from jx_base.expressions import extend
 from mo_dots import Null, coalesce, join_field, split_field, startswith_field
 from mo_future import text_type
 from mo_json.typed_encoder import TYPE_PREFIX
+from mo_logs import Log
 
 
 class Table(object):
     """
     REPRESENT A DATA CUBE
+    Mimic multiple Panda's Dataframes
     """
 
     def __init__(self, values, reps, defs, num_rows, schema, max_definition_level=None):
@@ -41,11 +44,19 @@ class Table(object):
 
     def get_column(self, name):
         sub_schema = self.schema
+
+        while '.' in sub_schema.more:
+            sub_schema = sub_schema.more.get('.')
+
         for n in split_field(name):
-            if n in sub_schema.more:
-                sub_schema = sub_schema.more.get(n)
+            m = sub_schema.more
+            if n in m:
+                sub_schema = m.get(n)
             else:
-                sub_schema = sub_schema.values.get(n)
+                Log.error("{{name}} not found in schema", name=name)
+
+            while '.' in sub_schema.more:
+                sub_schema = sub_schema.more.get('.')
 
         return Column(
             name,
@@ -117,7 +128,7 @@ class Column(object):
 
     def __init__(self, name, values, reps, defs, num_rows, schema, max_repetition_level, max_definition_level):
         self.name = name
-        self.values = values
+        self._values = values
         self.reps = reps
         self.defs = defs
         self.num_rows = num_rows
@@ -127,6 +138,10 @@ class Column(object):
 
     def __len__(self):
         return self.num_rows
+
+    @property
+    def values(self):
+        return np.array(self._values, self.schema.numpy_type)
 
     @property
     def dtype(self):

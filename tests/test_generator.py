@@ -115,6 +115,8 @@ class TestGenerated(FuzzyTestCase):
         schema=SchemaTree()
         schema.add("a", REPEATED, object)
         schema.add("a.b", REPEATED, int)
+        schema.lock()
+
         table = rows_to_columns(list(data), schema)
         self.assertEqual(table.values, expected_values)
         self.assertEqual(table.reps, expected_reps)
