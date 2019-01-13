@@ -91,7 +91,7 @@ class Encoder(object):
             offset += bit_width
             while offset >= 8:
                 self.byte(acc & 0xFF)
-                acc >> 8
+                acc >>= 8
                 offset -= 8
         if acc:
             self.byte(acc)
@@ -150,3 +150,32 @@ class Encoder(object):
         self.set_fixed_int(len(self) - all_start, 4, all_start - 4)
 
 
+def assemble(rep_type, values, rep_levels, def_levels, max_def_level):
+    if def_levels is None:
+        def temp():
+            while True:
+                yield max_def_level
+        def_levels = temp()
+
+    def _add(parents, value, rep_level, def_level):
+        del parents[rep_level+1:]
+        for r in rep_type[rep_level:def_level+1]:
+            if r == 0:
+                row = parents[-1]
+                parents.append(row)
+            elif r == 1:
+                row = parents[-1]
+                parents.append(row)
+            elif r == 2:
+                row = []
+                parents[-1].append(row)
+                parents.append(row)
+        parents[-1].append(value)
+
+    parents = [[]]
+    for value, def_level, rep_level in zip(values, def_levels, rep_levels):
+        _add(parents, value, rep_level, def_level)
+    return parents[0]
+
+
+_ = value2json

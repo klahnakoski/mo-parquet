@@ -13,7 +13,7 @@ import numpy as np
 from mo_dots import concat_field, startswith_field
 from mo_json import NESTED, OBJECT, PRIMITIVE, STRING, python_type_to_json_type
 from mo_logs import Log
-from mo_parquet.schema import OPTIONAL, REPEATED, REQUIRED, SchemaTree, get_length, get_repetition_type, merge_schema_element, python_type_to_all_types
+from mo_parquet.schema import OPTIONAL, REPEATED, REQUIRED, SchemaTree, get_length, get_repetition_type, merge_schema, python_type_to_all_types
 from mo_parquet.table import Table
 
 
@@ -66,7 +66,7 @@ def rows_to_columns(data, schema=None):
                                 OPTIONAL,
                                 ptype
                             )
-                            if python_type_to_json_type[ptype] in PRIMITIVE:
+                            if new_value is None or python_type_to_json_type[ptype] in PRIMITIVE:
                                 values[new_path] = []
                                 reps[new_path] = [0] * counters[0]
                                 defs[new_path] = [0] * counters[0]
@@ -87,6 +87,7 @@ def rows_to_columns(data, schema=None):
                 if schema.element.repetition_type == REQUIRED:
                     new_def_level = def_level
                 else:
+                    counters = counters + (0,)
                     new_def_level = def_level+1
 
                 for name, sub_schema in schema.more.items():
@@ -113,14 +114,14 @@ def rows_to_columns(data, schema=None):
         else:
             if jtype is STRING:
                 value = value.encode('utf8')
-            merge_schema_element(schema.element, path, value, ptype, ltype, dtype, jtype, itype, byte_width)
+            merge_schema(schema, path, value)
             values[path].append(value)
             if schema.element.repetition_type == REQUIRED:
                 reps[path].append(get_rep_level(counters))
                 defs[path].append(def_level)
             else:
                 reps[path].append(get_rep_level(counters))
-                defs[path].append(def_level+1)
+                defs[path].append(def_level + 1)
 
     for rownum, new_value in enumerate(data):
         try:

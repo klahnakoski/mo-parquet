@@ -61,7 +61,7 @@ class SchemaTree(object):
                 n = output.more.get(p)
                 output = n or output._add_one(p, fname, OPTIONAL, object)
 
-            output._add_one(path[-1], full_name, repetition_type, type)
+            return output._add_one(path[-1], full_name, repetition_type, type)
 
     def _add_one(self, simple_name, full_name, repetition_type, ptype):
         ntype, dtype, ltype, jtype, itype, length = python_type_to_all_types[ptype]
@@ -192,7 +192,7 @@ class SchemaTree(object):
 
     def max_repetition_level(self, path):
         path = self._path_to_schema_element(path)
-        return count(p for p in path if p.element.repetition_type == REPEATED)
+        return count(p for p in path if p.element.repetition_type != REQUIRED)
 
     def lock(self):
         self.locked = True
@@ -234,8 +234,16 @@ def get_repetition_type(jtype):
     return FieldRepetitionType.REPEATED if jtype is NESTED else FieldRepetitionType.OPTIONAL
 
 
-def merge_schema_element(element, name, value, ptype, ltype, dtype, jtype, ittype, length):
-    if element.type is not dtype:
+def merge_schema(schema, name, value):
+    ptype = type(value)
+    ntype, dtype, ltype, jtype, ittype, length = python_type_to_all_types[ptype]
+    element = schema.element
+
+    if schema.numpy_type is None:
+        schema.numpy_type = ntype
+    if element.type is None:
+        element.type = dtype
+    elif element.type is not dtype:
         Log.error("Expecting mathcing types")
     element.type_length = MAX((element.type_length, length))
     return element
