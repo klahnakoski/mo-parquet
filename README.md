@@ -4,7 +4,7 @@ Read and write parquet files in pure Python, including nested object arrays
 
 ## Problem
 
-Python libraries do not support deeply nested object arrays in Parquet format.  
+Python libraries do not support deeply nested object arrays in Parquet format.
 
 ## Solution
 
@@ -20,7 +20,7 @@ I have read the Dremel paper, and some other docs describing the Dremel paper, a
 
 ### Simplifying Assumption
 
-Understanding the Dremel encoding is easier if you first consider all properties REPEATED. With this, we can assume all nulls (and missing values) are an empty array (`[]`) and all values are a singleton array (`[value]`). These assumptions allow each leaf property to be represented by a `N`-dimensional array, where `N` is the nesting level of the property (plus additional dimensions if any are arrays of arrays). For each step on the path to the leaf value, there is a dimension that represents that step. 
+Understanding the Dremel encoding is easier if you first consider all properties REPEATED. With this, we can assume all nulls (and missing values) are an empty array (`[]`) and all values are a singleton array (`[value]`). These assumptions allow each leaf property to be represented by a `N`-dimensional array, where `N` is the nesting level of the property (plus additional dimensions if any are arrays of arrays). For each step on the path to the leaf value, there is a dimension that represents that step.
 
 Let us call multidimensional arrays "cubes".
 
@@ -31,7 +31,7 @@ Here is an example of the representative cube for for `a.b`
 |   null                   |          [[]]         |
 |   {}                     |          [[]]         |
 |   {"a": {}}              |          [[]]         |
-|   {"a": {"b": []}}       |          [[]]         |   
+|   {"a": {"b": []}}       |          [[]]         |
 |   {"a": {"b": [1]}}      |         [[1]]         |
 |   {"a": {"b": [1, 2]}}   |        [[1, 2]]       |
 
@@ -45,8 +45,8 @@ The repetition number is a way of translating a plain series of values into thes
 When considering the REQUIRED and OPTIONAL properties, below, it will not change our interpretation of the repetition number. These restricted properties only define how the single-values appear in the original JSON, the repetition number is unchanged.
 
 ### Definition Number
- 
-The definition number is not simple; it encodes both nulls and values, and it must consider the nature (REQUIRED, OPTIONAL, REPEATED) of every column to calculate properly. For non-missing values the definition number is equal to the dimension minus the number of REQUIRED properties in the path; this means it is the equal to N.  
+
+The definition number is not simple; it encodes both nulls and values, and it must consider the nature (REQUIRED, OPTIONAL, REPEATED) of every column to calculate properly. For non-missing values the definition number is equal to the dimension minus the number of REQUIRED properties in the path; this means it is the equal to N.
 
 If we assume **neither** `a` nor `b` are REQUIRED, then the definition number is encoding the depth of the non-missing value OR the depth of null encountered:
 
@@ -55,7 +55,7 @@ If we assume **neither** `a` nor `b` are REQUIRED, then the definition number is
 |   null                    |  null |   0   |  -1   |
 |   {}                      |  null |   0   |   0   |
 |   {"a": {}}               |  null |   0   |   1   |
-|   {"a": {"b": []}}        |  null |   0   |   1   |   
+|   {"a": {"b": []}}        |  null |   0   |   1   |
 |   {"a": {"b": [1]}}       |   1   |   0   |   2   |
 |   {"a": {"b": [1, 2]}}    |  1 2  |  0 2  |  2 2  |
 |   {"a": {"b": [1, None]}} |  1 2  |  0 2  |  2 2  |
@@ -67,20 +67,20 @@ Notice the definition level can only be N=2 if it encodes a non-null value. This
 Tests can be found https://github.com/Parquet/parquet-compatibility
 
 
-## Notes 
+## Notes
 
 
-General Format: https://github.com/apache/parquet-format
-Encoding Details: https://github.com/apache/parquet-format/blob/master/Encodings.md
-
-Good description: https://github.com/julienledem/redelm/wiki/The-striping-and-assembly-algorithms-from-the-Dremel-paper
+ - General Format: https://github.com/apache/parquet-format
+ - Encoding Details: https://github.com/apache/parquet-format/blob/master/Encodings.md
+ - Good Explanation of Dremel for Parquet: https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html
+ - Good description: https://github.com/julienledem/redelm/wiki/The-striping-and-assembly-algorithms-from-the-Dremel-paper
 
 
 ### Low level encoding
 
 The structures are encoded using [Thrift compaction protocol](https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md), specifically using [Thrift 110](https://issues.apache.org/jira/browse/THRIFT-110).  Here is a copy:
 
-	message               => version-and-type seq-id method-name struct-encoding 
+	message               => version-and-type seq-id method-name struct-encoding
 	version-and-type      => (6-bit version identifier) (2-bit type identifier)
 	seq-id                => varint
 	method-name           => varint (N-byte string)
